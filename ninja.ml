@@ -270,7 +270,7 @@ let outtables gtbl atbl nm gr =
   let rec p = function
     | (nid, n) :: tl ->
       printf "(%S,%d)%s" nid n
-        (if tl = [] then "" else ",");
+        (if tl = [] then "" else ";");
       p tl
     | [] -> () in
   p nm; printf "]\n"
