@@ -243,10 +243,8 @@ again:
 			t1.look = first(rem, *l);
 			chg = iadd(i, &t1);
 			free(t1.look);
-			if (chg) {
-				n = 0;
+			if (chg)
 				goto again;
-			}
 			if (*++l==S) {
 				l = t->look;
 				r++;
