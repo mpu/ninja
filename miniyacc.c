@@ -4,10 +4,13 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef unsigned Sym;
 typedef struct Rule Rule;
 typedef struct Info Info;
+typedef struct Term Term;
+typedef struct Item Item;
 
 #define S ((Sym) -1)
 #define LastTok 128
@@ -24,6 +27,17 @@ struct Info {
 	Sym *fst;
 };
 
+struct Term {
+	Rule *rule;
+	int dot;
+	Sym *look;
+};
+
+struct Item {
+	Term *ts;
+	int nt;
+};
+
 int nr, ns;
 Rule *rs;
 Info *is;
@@ -38,7 +52,7 @@ die(char *s)
 int
 rcmp(const void *a, const void *b)
 {
-	return ((Rule *)b)->lhs - ((Rule *)a)->lhs;
+	return ((Rule *)a)->lhs - ((Rule *)b)->lhs;
 }
 
 Rule *
@@ -49,10 +63,9 @@ rfind(Sym lhs)
 
 	k.lhs = lhs;
 	r = bsearch(&k, rs, nr, sizeof *r, rcmp);
-	if (r != 0) {
-		while (r > rs && r->lhs == lhs)
+	if (r != 0)
+		while (r > rs && r[-1].lhs == lhs)
 			r--;
-	}
 	return r;
 }
 
@@ -99,8 +112,11 @@ sunion(Sym **pa, Sym *b)
 		}
 	}
 	*p = S;
-	free(*pa);
-	*pa = l;
+	if (ch) {
+		free(*pa);
+		*pa = l;
+	} else
+		free(l);
 	return ch;
 }
 
@@ -127,6 +143,10 @@ first(Sym *stnc, Sym last)
 	return s;
 }
 
+/* Note: this requires that i->nul is initially false
+ * for all entries in the information table. i->fst
+ * can be garbage for tokens.
+ */
 void
 ginit()
 {
@@ -135,10 +155,8 @@ ginit()
 	Info *i;
 	Sym *s;
 
-	for (i=&is[LastTok]; i-is<ns; i++) {
-		i->nul = 0;
+	for (i=&is[LastTok]; i-is<ns; i++)
 		i->fst = salloc(0);
-	}
 	do {
 		chg = 0;
 		for (r=rs; r-rs<nr; r++) {
@@ -157,6 +175,87 @@ ginit()
 }
 
 int
+tcmp(Term *a, Term *b)
+{
+	int c;
+
+	c = a->rule - b->rule;
+	if (c==0)
+		c = a->dot - b->dot;
+	return c;
+}
+
+#if 0
+int
+tcmpv(void *a, void *b)
+{
+	return tcmp(a, b);
+}
+#endif
+
+int
+iadd(Item *i, Term *t1)
+{
+	Term *t;
+	int n, c;
+
+	for (n=0, t=i->ts; n<i->nt; n++, t++) {
+		c = tcmp(t, t1);
+		if (c==0)
+			return sunion(&t->look, t1->look);
+		if (c>0)
+			break;
+	}
+	i->nt++;
+	i->ts = realloc(i->ts, i->nt * sizeof *t1);
+	if (!i->ts)
+		die("out of memory");
+	t = &i->ts[n];
+	memmove(t+1, t, (i->nt - (n+1)) * sizeof *t1);
+	*t = *t1;
+	t1->look = 0;
+	return 1;
+}
+
+void
+iclose(Item *i)
+{
+	Rule *r;
+	Term *t, t1;
+	Sym s, *rem, *l;
+	int chg, n;
+
+again:
+	for (n=0; n<i->nt; n++) {
+		t = &i->ts[n];
+		rem = &t->rule->rhs[t->dot];
+		s = *rem++;
+		if (s < LastTok)
+			continue;
+		r = rfind(s);
+		assert(r);
+		assert(r->lhs == s);
+		l = t->look;
+		assert(*l!=S);
+		do {
+			t1.rule = r;
+			t1.dot = 0;
+			t1.look = first(rem, *l);
+			chg = iadd(i, &t1);
+			free(t1.look);
+			if (chg) {
+				n = 0;
+				goto again;
+			}
+			if (*++l==S) {
+				l = t->look;
+				r++;
+			}
+		} while (r->lhs == s);
+	}
+}
+
+int
 main()
 {
 
@@ -170,6 +269,7 @@ main()
 	[3]     = { .name = "*" },
 	[4]     = { .name = "(" },
 	[5]     = { .name = ")" },
+	[NT(-1)]= { .name = "EOF" },
 	/* Non-terminals */
 	[NT(0)] = { .name = "A" },
 	[NT(1)] = { .name = "M" },
@@ -203,5 +303,27 @@ main()
 		printf("\n");
 	}
 
-	return 0;
+	Item i0 = {0,0};
+	Sym *s = salloc(1);
+	s[0] = NT(-1);
+	iadd(&i0, &(Term){ .rule = rfind(NT(3)), .dot = 0, .look = s });
+	iclose(&i0);
+
+	printf("\nInitial closure:\n");
+	for (Term *t=i0.ts; t-i0.ts<i0.nt; t++) {
+		int n = 0;
+		Rule *r = t->rule;
+		int d = t->dot;
+		n += printf("  %s ->", is[r->lhs].name);
+		for (Sym *s=r->rhs; *s!=S; s++, d--)
+			n += printf(" %s%s", d ? "" : ". ", is[*s].name);
+		while (n++<30)
+			putchar(' ');
+		printf("[");
+		for (Sym *s=t->look; *s!=S; s++)
+			printf(" %s", is[*s].name);
+		printf(" ]\n");
+	}
+
+	exit(0);
 }
