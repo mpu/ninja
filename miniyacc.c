@@ -111,7 +111,7 @@ first(Sym *stnc, Sym last)
 
 	f = stnc[0];
 	if (f == S) {
-		assert(last < LastTok);
+		assert(last==S || last<LastTok);
 		f = last;
 	}
 	if (f < LastTok) {
@@ -138,18 +138,18 @@ ginit()
 	for (i=&is[LastTok]; i-is<ns; i++) {
 		i->nul = 0;
 		i->fst = salloc(0);
-		i->fst[0] = S;
 	}
 	do {
 		chg = 0;
 		for (r=rs; r-rs<nr; r++) {
 			i = &is[r->lhs];
-			if (r->rhs[0] == S) {
-				chg |= i->nul == 0;
-				i->nul = 1;
-				continue;
-			}
-			s = first(r->rhs, LastTok);
+			for (s=r->rhs; *s!=S; s++)
+				if (!is[*s].nul)
+					goto nonul;
+			chg |= i->nul == 0;
+			i->nul = 1;
+		nonul:
+			s = first(r->rhs, S);
 			chg |= sunion(&i->fst, s);
 			free(s);
 		}
