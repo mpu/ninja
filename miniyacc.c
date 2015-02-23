@@ -1,3 +1,6 @@
+/*% cc -g -std=c99 -Wall -Wextra % -o #
+ * miniyacc - port of ninja.ml, LALR(1) grammars.
+ */
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +64,7 @@ salloc(int n)
 	s = malloc((n+1) * sizeof *s);
 	if (!s)
 		die("out of memory");
+	s[n] = S;
 	return s;
 }
 
@@ -83,23 +87,44 @@ sunion(Sym **pa, Sym *b)
 	l = salloc(smem(a, S) + smem(b, S));
 	p = l;
 	ch = 0;
-	for (;;) {
-		if (*a==S && *b==S) {
-			*p = S;
-			break;
-		}
+	while (*a!=S || *b!=S) {
 		if (*a==S || (*b!=S && *b<*a)) {
 			*p++ = *b++;
 			ch = 1;
 		}
 		else {
-			b += (*a == *b);
+			if (*a==*b)
+				b++;
 			*p++ = *a++;
 		}
 	}
+	*p = S;
 	free(*pa);
 	*pa = l;
 	return ch;
+}
+
+Sym *
+first(Sym *stnc, Sym last)
+{
+	Sym f, *s;
+
+	f = stnc[0];
+	if (f == S) {
+		assert(last < LastTok);
+		f = last;
+	}
+	if (f < LastTok) {
+		s = salloc(1);
+		s[0] = f;
+		return s;
+	}
+	if (is[f].nul)
+		s = first(stnc+1, last);
+	else
+		s = salloc(0);
+	sunion(&s, is[f].fst);
+	return s;
 }
 
 void
@@ -108,7 +133,7 @@ ginit()
 	int chg;
 	Rule *r;
 	Info *i;
-	Sym f;
+	Sym *s;
 
 	for (i=&is[LastTok]; i-is<ns; i++) {
 		i->nul = 0;
@@ -119,15 +144,14 @@ ginit()
 		chg = 0;
 		for (r=rs; r-rs<nr; r++) {
 			i = &is[r->lhs];
-			f = r->rhs[0];
-			if (f == S) {
+			if (r->rhs[0] == S) {
 				chg |= i->nul == 0;
 				i->nul = 1;
+				continue;
 			}
-			else if (f < LastTok)
-				chg |= sunion(&i->fst, (Sym[]){f, S});
-			else
-				chg |= sunion(&i->fst, is[f].fst);
+			s = first(r->rhs, LastTok);
+			chg |= sunion(&i->fst, s);
+			free(s);
 		}
 	} while (chg);
 }
