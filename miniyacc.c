@@ -312,6 +312,7 @@ stadd(Item *i)
 			sunion(&i0->ts[n].look, i->ts[n].look);
 			free(i->ts[n].look);
 		}
+		free(i->ts);
 		free(i);
 		return i0;
 	}
