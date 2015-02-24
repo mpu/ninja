@@ -325,10 +325,10 @@ stgen(Sym sstart)
 	Item *start, *i, *i1;
 	int n;
 
-	start = malloc(sizeof *i);
+	start = malloc(sizeof *start);
 	if (!start)
 		die("out of memory");
-	*start = (Item){ 0, 0, 0};
+	*start = (Item){ 0, 0, 0 };
 	r = rfind(sstart);
 	assert(r);
 	eof = salloc(1);
