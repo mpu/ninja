@@ -226,15 +226,13 @@ iclose(Item *i)
 	int chg, n;
 
 again:
-	for (n=0; n<i->nt; n++) {
-		t = &i->ts[n];
+	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		rem = &t->rule->rhs[t->dot];
 		s = *rem++;
-		if (s < LastTok)
+		if (s < LastTok || s == S)
 			continue;
 		r = rfind(s);
 		assert(r);
-		assert(r->lhs == s);
 		l = t->look;
 		assert(*l!=S);
 		do {
@@ -251,6 +249,27 @@ again:
 			}
 		} while (r->lhs == s);
 	}
+}
+
+Item
+igoto(Item *i, Sym s)
+{
+	Term *t, t1;
+	Item i1;
+	int n;
+
+	i1 = (Item){ 0, 0 };
+	for (n=0, t=i->ts; n<i->nt; n++, t++) {
+		if (t->rule->rhs[t->dot] != s)
+			continue;
+		t1.rule = t->rule;
+		t1.dot = t->dot + 1;
+		t1.look = salloc(0);
+		sunion(&t1.look, t->look);
+		iadd(&i1, &t1);
+	}
+	iclose(&i1);
+	return i1;
 }
 
 int
@@ -306,15 +325,19 @@ main()
 	s[0] = NT(-1);
 	iadd(&i0, &(Term){ .rule = rfind(NT(3)), .dot = 0, .look = s });
 	iclose(&i0);
+	Item i1 = igoto(&i0, 4);
 
+	Item i = i1;
 	printf("\nInitial closure:\n");
-	for (Term *t=i0.ts; t-i0.ts<i0.nt; t++) {
+	for (Term *t=i.ts; t-i.ts<i.nt; t++) {
 		int n = 0;
 		Rule *r = t->rule;
 		int d = t->dot;
 		n += printf("  %s ->", is[r->lhs].name);
 		for (Sym *s=r->rhs; *s!=S; s++, d--)
 			n += printf(" %s%s", d ? "" : ". ", is[*s].name);
+		if (!d)
+			n += printf(" .");
 		while (n++<30)
 			putchar(' ');
 		printf("[");
