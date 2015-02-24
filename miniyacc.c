@@ -36,11 +36,13 @@ struct Term {
 struct Item {
 	Term *ts;
 	int nt;
+	Item *gtbl;
 };
 
-int nr, ns;
+int nrl, nsy, nst;
 Rule *rs;
 Info *is;
+Item **st;
 
 void
 die(char *s)
@@ -62,7 +64,7 @@ rfind(Sym lhs)
 	Rule k;
 
 	k.lhs = lhs;
-	r = bsearch(&k, rs, nr, sizeof *r, rcmp);
+	r = bsearch(&k, rs, nrl, sizeof *r, rcmp);
 	if (r != 0)
 		while (r > rs && r[-1].lhs == lhs)
 			r--;
@@ -155,11 +157,11 @@ ginit()
 	Info *i;
 	Sym *s;
 
-	for (i=&is[LastTok]; i-is<ns; i++)
+	for (i=&is[LastTok]; i-is<nsy; i++)
 		i->fst = salloc(0);
 	do {
 		chg = 0;
-		for (r=rs; r-rs<nr; r++) {
+		for (r=rs; r-rs<nrl; r++) {
 			i = &is[r->lhs];
 			for (s=r->rhs; *s!=S; s++)
 				if (!is[*s].nul)
@@ -258,7 +260,7 @@ igoto(Item *i, Sym s)
 	Item i1;
 	int n;
 
-	i1 = (Item){ 0, 0 };
+	i1 = (Item){ 0, 0, 0 };
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
@@ -270,6 +272,64 @@ igoto(Item *i, Sym s)
 	}
 	iclose(&i1);
 	return i1;
+}
+
+int
+icmp(Item *a, Item *b)
+{
+	int n, c;
+
+	c = b->nt - a->nt;
+	for (n=0; c && n<a->nt; n++)
+		c = tcmp(&a->ts[n], &b->ts[n]);
+	return c;
+}
+
+Item *
+stadd(Item *i)
+{
+	Item *i0;
+	int lo, hi, mid, n;
+
+	/* http://www.iq0.com/duffgram/bsearch.c */
+	lo = 0;
+	hi = nst - 1;
+	if (hi<0 || icmp(i, st[hi])>0) {
+		hi++;
+		goto found;
+	}
+	if (icmp(i, st[lo])<=0) {
+		hi = lo;
+		goto found;
+	}
+	while (hi-lo!=1) {
+		mid = (lo+hi)/2;
+		if (icmp(st[mid], i)<0)
+			lo = mid;
+		else
+			hi = mid;
+	}
+found:
+	if (hi<nst && icmp(st[hi], i)==0) {
+		i0 = st[hi];
+		for (n=0; n<i->nt; n++) {
+			sunion(&i0->ts[n].look, i->ts[n].look);
+			free(i->ts[n].look);
+		}
+		free(i);
+		return i0;
+	}
+	st = realloc(st, ++nst * sizeof *st);
+	if (!st)
+		die("out of memory");
+	memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof *st);
+	st[hi] = i;
+	return i;
+}
+
+void
+stgen()
+{
 }
 
 int
@@ -305,13 +365,13 @@ main()
 	{ NT(3), (Sym[]){ NT(0), S },           "S -> A" },
 	};
 
-	ns = sizeof infos / sizeof infos[0];
-	nr = sizeof rules / sizeof rules[0];
+	nsy = sizeof infos / sizeof infos[0];
+	nrl = sizeof rules / sizeof rules[0];
 	is = infos;
 	rs = rules;
 
 	ginit();
-	for (Info *i=&is[LastTok]; i-is<ns; i++) {
+	for (Info *i=&is[LastTok]; i-is<nsy; i++) {
 		printf("Symbol %s\n", i->name);
 		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
 		printf("  First:   ");
@@ -320,7 +380,7 @@ main()
 		printf("\n");
 	}
 
-	Item i0 = {0,0};
+	Item i0 = {0,0,0};
 	Sym *s = salloc(1);
 	s[0] = NT(-1);
 	iadd(&i0, &(Term){ .rule = rfind(NT(3)), .dot = 0, .look = s });
