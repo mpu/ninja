@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef unsigned Sym;
+typedef int Sym;
 typedef struct Rule Rule;
 typedef struct Info Info;
 typedef struct Term Term;
@@ -36,7 +36,7 @@ struct Term {
 struct Item {
 	Term *ts;
 	int nt;
-	Item *gtbl;
+	Item **gtbl;
 };
 
 int nrl, nsy, nst;
@@ -187,14 +187,6 @@ tcmp(Term *a, Term *b)
 	return c;
 }
 
-#if 0
-int
-tcmpv(void *a, void *b)
-{
-	return tcmp(a, b);
-}
-#endif
-
 int
 iadd(Item *i, Term *t1)
 {
@@ -280,18 +272,19 @@ icmp(Item *a, Item *b)
 	int n, c;
 
 	c = b->nt - a->nt;
-	for (n=0; c && n<a->nt; n++)
+	for (n=0; !c && n<a->nt; n++)
 		c = tcmp(&a->ts[n], &b->ts[n]);
 	return c;
 }
 
-Item *
-stadd(Item *i)
+void
+stadd(Item **pi)
 {
-	Item *i0;
+	Item *i, *i1;
 	int lo, hi, mid, n;
 
 	/* http://www.iq0.com/duffgram/bsearch.c */
+	i = *pi;
 	lo = 0;
 	hi = nst - 1;
 	if (hi<0 || icmp(i, st[hi])>0)
@@ -307,26 +300,89 @@ stadd(Item *i)
 				hi = mid;
 		}
 	if (hi<nst && icmp(st[hi], i)==0) {
-		i0 = st[hi];
+		i1 = st[hi];
 		for (n=0; n<i->nt; n++) {
-			sunion(&i0->ts[n].look, i->ts[n].look);
+			sunion(&i1->ts[n].look, i->ts[n].look);
 			free(i->ts[n].look);
 		}
 		free(i->ts);
 		free(i);
-		return i0;
+		*pi = i1;
+	} else {
+		st = realloc(st, ++nst * sizeof *st);
+		if (!st)
+			die("out of memory");
+		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof *st);
+		st[hi] = i;
 	}
-	st = realloc(st, ++nst * sizeof *st);
-	if (!st)
+}
+
+Item *
+stgen(Sym sstart)
+{
+	Sym *eof, s;
+	Rule *r;
+	Item *start, *i, *i1;
+	int n;
+
+	start = malloc(sizeof *i);
+	if (!start)
 		die("out of memory");
-	memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof *st);
-	st[hi] = i;
-	return i;
+	*start = (Item){ 0, 0, 0};
+	r = rfind(sstart);
+	assert(r);
+	eof = salloc(1);
+	eof[0] = (LastTok-1);                         /* FIXME */
+	iadd(start, &(Term){ r, 0, eof });
+	iclose(start);
+	stadd(&start);
+	for (;;) {
+		for (n=0;; n++) {
+			if (n>=nst)
+				return start;
+			i = st[n];
+			if (!i->gtbl)
+				break;
+		}
+		i->gtbl = malloc(nsy * sizeof i1);
+		if (!i->gtbl)
+			die("out of memory");
+		for (s=0; s<nsy; s++) {
+			i1 = malloc(sizeof *i1);
+			if (!i1)
+				die("out of memory");
+			*i1 = igoto(i, s);
+			iclose(i1);
+			stadd(&i1);
+			i->gtbl[s] = i1;
+		}
+	}
 }
 
 void
-stgen()
+dumpitem(Item *i)
 {
+	Term *t;
+	Sym *s;
+	int n, d;
+	Rule *r;
+
+	for (t=i->ts; t-i->ts<i->nt; t++) {
+		n = 0;
+		r = t->rule;
+		d = t->dot;
+		n += printf("  %s ->", is[r->lhs].name);
+		for (s=r->rhs; *s!=S; s++, d--)
+			n += printf(" %s%s", d ? "" : ". ", is[*s].name);
+		if (!d)
+			n += printf(" .");
+		while (n++<30)
+			putchar(' ');
+		printf("[");
+		for (s=t->look; *s!=S; s++)
+			printf(" %s", is[*s].name);
+		printf(" ]\n");
+	}
 }
 
 int
@@ -377,30 +433,11 @@ main()
 		printf("\n");
 	}
 
-	Item i0 = {0,0,0};
-	Sym *s = salloc(1);
-	s[0] = NT(-1);
-	iadd(&i0, &(Term){ .rule = rfind(NT(3)), .dot = 0, .look = s });
-	iclose(&i0);
-	Item i1 = igoto(&i0, 4);
+	stgen(NT(3));
 
-	Item i = i1;
-	printf("\nInitial closure:\n");
-	for (Term *t=i.ts; t-i.ts<i.nt; t++) {
-		int n = 0;
-		Rule *r = t->rule;
-		int d = t->dot;
-		n += printf("  %s ->", is[r->lhs].name);
-		for (Sym *s=r->rhs; *s!=S; s++, d--)
-			n += printf(" %s%s", d ? "" : ". ", is[*s].name);
-		if (!d)
-			n += printf(" .");
-		while (n++<30)
-			putchar(' ');
-		printf("[");
-		for (Sym *s=t->look; *s!=S; s++)
-			printf(" %s", is[*s].name);
-		printf(" ]\n");
+	for (int n=0; n<nst; n++) {
+		printf("\nState %d:\n", n);
+		dumpitem(st[n]);
 	}
 
 	exit(0);
