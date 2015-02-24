@@ -294,22 +294,18 @@ stadd(Item *i)
 	/* http://www.iq0.com/duffgram/bsearch.c */
 	lo = 0;
 	hi = nst - 1;
-	if (hi<0 || icmp(i, st[hi])>0) {
+	if (hi<0 || icmp(i, st[hi])>0)
 		hi++;
-		goto found;
-	}
-	if (icmp(i, st[lo])<=0) {
+	else if (icmp(i, st[lo])<=0)
 		hi = lo;
-		goto found;
-	}
-	while (hi-lo!=1) {
-		mid = (lo+hi)/2;
-		if (icmp(st[mid], i)<0)
-			lo = mid;
-		else
-			hi = mid;
-	}
-found:
+	else
+		while (hi-lo!=1) {
+			mid = (lo+hi)/2;
+			if (icmp(st[mid], i)<0)
+				lo = mid;
+			else
+				hi = mid;
+		}
 	if (hi<nst && icmp(st[hi], i)==0) {
 		i0 = st[hi];
 		for (n=0; n<i->nt; n++) {
