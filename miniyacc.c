@@ -385,7 +385,6 @@ stgen(Sym sstart)
 void
 tblset(int *tbl, Item *i, Term *t)
 {
-
 	Sym s, *l;
 
 	s = t->rule->rhs[t->dot];
@@ -407,7 +406,7 @@ tblset(int *tbl, Item *i, Term *t)
 				srconf += tbl[*l] > 0;
 				rrconf += tbl[*l] < 0;
 			} else
-				tbl[*l] = -(t->rule-rs + 1);
+				tbl[*l] = - (t->rule-rs+2);
 		}
 }
 
@@ -445,8 +444,8 @@ tblgen()
 			if (h==0)
 				continue;
 			a->ndef--;
-			if (h<0) {
-				h = -(h+1);
+			if (h<-1) {
+				h = -(h+2);
 				hs[h % H].red = h;
 				hs[h % H].cnt++;
 			}

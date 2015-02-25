@@ -36,7 +36,8 @@ States are indexed starting from 1.  A postive
 action is a shift action, the value of the action
 is the destination state.  A negative action is
 a reduce by the rule whose number is the opposite
-of the action minus one.  A 0 action indicates
+of the action minus two.  A 0 action indicates
 the default action.  This one is either -1,
 indicating an error state, or a rule number to
-reduce.
+reduce.  A -1 in the action table marks an
+explicit parsing error.
