@@ -15,7 +15,7 @@ typedef struct Arow Arow;
 
 #define S ((Sym) -1)
 #define NulItem (Item){0,0,0,0}
-#define Red(n) (- (n+2))
+#define Red(n) (- (n+2)) /* involutive, Red(Red(x)) == x */
 
 struct Rule {
 	Sym lhs;
@@ -457,7 +457,7 @@ tblgen()
 			m = hs[h].cnt;
 			a->def = hs[h].red;
 		}
-		/* zero out the default entry */
+		/* zero out the most frequent reduce */
 		if (a->def>=0)
 			for (m=0, h=Red(a->def); m<nsy; m++)
 				if (a->t[m]==h)
