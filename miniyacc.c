@@ -447,7 +447,7 @@ tblgen()
 			if (h==0)
 				continue;
 			a->ndef--;
-			if (h<-1) {
+			if (h<=Red(0)) {
 				h = Red(h);
 				hs[h % H].red = h;
 				hs[h % H].cnt++;
