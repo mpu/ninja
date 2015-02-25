@@ -400,14 +400,16 @@ tblset(int *tbl, Item *i, Term *t)
 		tbl[s] = i->gtbl[s]->id;
 	} else
 		/* reduce */
-		for (l=t->look; *l!=S; l++) {
+		for (l=t->look; (s=*l)!=S; l++) {
 			/* default to shift if conflict occurs */
-			if (tbl[*l]) {
-				printf(tbl[*l]<0?rrs:srs, i->id, is[*l].name);
-				srconf += tbl[*l] > 0;
-				rrconf += tbl[*l] < 0;
+			if (tbl[s]<0) {
+				printf(rrs, i->id, is[s].name);
+				rrconf++;
+			} else if (tbl[s]>0) {
+				printf(srs, i->id, is[s].name);
+				srconf++;
 			} else
-				tbl[*l] = Red(t->rule-rs);
+				tbl[s] = Red(t->rule-rs);
 		}
 }
 
