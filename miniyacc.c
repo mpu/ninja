@@ -15,6 +15,7 @@ typedef struct Arow Arow;
 
 #define S ((Sym) -1)
 #define NulItem (Item){0,0,0,0}
+#define Red(n) (- (n+2))
 
 struct Rule {
 	Sym lhs;
@@ -406,7 +407,7 @@ tblset(int *tbl, Item *i, Term *t)
 				srconf += tbl[*l] > 0;
 				rrconf += tbl[*l] < 0;
 			} else
-				tbl[*l] = - (t->rule-rs+2);
+				tbl[*l] = Red(t->rule-rs);
 		}
 }
 
@@ -445,7 +446,7 @@ tblgen()
 				continue;
 			a->ndef--;
 			if (h<-1) {
-				h = -(h+2);
+				h = Red(h);
 				hs[h % H].red = h;
 				hs[h % H].cnt++;
 			}
@@ -458,7 +459,7 @@ tblgen()
 		}
 		/* zero out the default entry */
 		if (a->def>=0)
-			for (m=0, h=-(a->def+1); m<nsy; m++)
+			for (m=0, h=Red(a->def); m<nsy; m++)
 				if (a->t[m]==h)
 					a->t[m] = 0;
 	}
