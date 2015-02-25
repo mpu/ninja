@@ -11,7 +11,7 @@ typedef struct Rule Rule;
 typedef struct Info Info;
 typedef struct Term Term;
 typedef struct Item Item;
-typedef struct Action Action;
+typedef struct Arow Arow;
 
 #define S ((Sym) -1)
 #define NulItem (Item){0,0,0,0}
@@ -41,10 +41,24 @@ struct Item {
 	int id;
 };
 
-int nrl, nsy, nst, ntoks;
-Rule *rs;
-Info *is;
-Item **st;
+struct Arow {
+	int def;
+	int ndef;
+	int *t;
+};
+
+int nrl, nsy, nst, ntk;
+Rule *rs;  /* grammar rules (ordered, rcmp) */
+Info *is;  /* symbol information */
+Item **st; /* LALR(1) states (ordered, icmp) */
+Arow *as;  /* action table */
+
+int srconf, rrconf;
+int actsz;
+int *act;
+int *chk;
+int *adsp;
+int *gdsp;
 
 void
 die(char *s)
@@ -78,7 +92,7 @@ salloc(int n)
 {
 	Sym *s;
 
-	s = malloc((n+1) * sizeof *s);
+	s = malloc((n+1) * sizeof s[0]);
 	if (!s)
 		die("out of memory");
 	s[n] = S;
@@ -131,10 +145,10 @@ first(Sym *stnc, Sym last)
 
 	f = stnc[0];
 	if (f == S) {
-		assert(last==S || last<ntoks);
+		assert(last==S || last<ntk);
 		f = last;
 	}
-	if (f < ntoks) {
+	if (f < ntk) {
 		s = salloc(1);
 		s[0] = f;
 		return s;
@@ -159,7 +173,7 @@ ginit()
 	Info *i;
 	Sym *s;
 
-	for (i=&is[ntoks]; i-is<nsy; i++)
+	for (i=&is[ntk]; i-is<nsy; i++)
 		i->fst = salloc(0);
 	do {
 		chg = 0;
@@ -225,7 +239,7 @@ again:
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		rem = &t->rule->rhs[t->dot];
 		s = *rem++;
-		if (s < ntoks || s == S)
+		if (s < ntk || s == S)
 			continue;
 		r = rfind(s);
 		assert(r);
@@ -311,10 +325,10 @@ stadd(Item **pi)
 		free(i);
 		*pi = i1;
 	} else {
-		st = realloc(st, ++nst * sizeof *st);
+		st = realloc(st, ++nst * sizeof st[0]);
 		if (!st)
 			die("out of memory");
-		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof *st);
+		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
 		st[hi] = i;
 	}
 }
@@ -334,7 +348,7 @@ stgen(Sym sstart)
 	r = rfind(sstart);
 	assert(r);
 	eof = salloc(1);
-	eof[0] = (ntoks-1);                         /* FIXME */
+	eof[0] = 0;
 	iadd(start, &(Term){ r, 0, eof });
 	iclose(start);
 	stadd(&start);
@@ -346,7 +360,7 @@ stgen(Sym sstart)
 			if (!i->gtbl)
 				break;
 		}
-		i->gtbl = malloc(nsy * sizeof i1);
+		i->gtbl = malloc(nsy * sizeof i->gtbl[0]);
 		if (!i->gtbl)
 			die("out of memory");
 		for (s=0; s<nsy; s++) {
@@ -362,6 +376,71 @@ stgen(Sym sstart)
 			stadd(&i1);
 			i->gtbl[s] = i1;
 		}
+	}
+}
+
+void
+tblgen()
+{
+	enum { H = 113 };
+	struct {
+		int red;
+		int cnt;
+	} hs[H];
+	Term *t;
+	Item *i;
+	Arow *a;
+	Sym *s, sdot;
+	int n, m, h;
+
+	for (n=0; n<nst; n++)
+		st[n]->id = n+1;
+	as = malloc(nst * sizeof as[0]);
+	if (!as)
+		die("out of memory");
+	for (n=0, a=as; n<nst; n++, a++) {
+		a->def = -1;
+		a->ndef = nsy;
+		a->t = calloc(nsy, sizeof a->t[0]);
+		if (!a->t)
+			die("out of memory");
+		i = st[n];
+		for (h=0; h<H; h++)
+			hs[h].cnt = 0;
+		for (t=i->ts; t-i->ts<i->nt; t++) {
+			sdot = t->rule->rhs[t->dot];
+			if (sdot==S)
+				/* reduce */
+				for (s=t->look; *s!=S; s++) {
+					m = rs - t->rule;
+					hs[m % H].red = m;
+					hs[m % H].cnt++;
+					if (a->t[*s])
+						printf("!r %s %d\n", is[*s].name, i->id);
+					a->t[*s] = -(m+1);
+				}
+			else {
+				/* shift/goto */
+				if (!i->gtbl[sdot])
+					continue;
+				if (a->t[sdot] && sdot<ntk)
+					printf("!s %s %d\n", is[sdot].name, i->id);
+				a->t[sdot] = i->gtbl[sdot]->id;
+			}
+			a->ndef--;
+		}
+		/* find most frequent reduce */
+		for (h=0, m=0; h<H; h++) {
+			if (hs[h].cnt <= m)
+				continue;
+			m = hs[h].cnt;
+			a->def = hs[h].red;
+		}
+		/* zero out the default entry */
+		if (a->def>=0)
+			for (m=0, h=-(a->def+1); m<nsy; m++)
+				if (a->t[m]==h)
+					a->t[m] = 0;
 	}
 }
 
@@ -384,7 +463,7 @@ dumpitem(Item *i)
 			n += printf(" .");
 		while (n++<30)
 			putchar(' ');
-		printf("[");
+		printf(" [");
 		for (s=t->look; *s!=S; s++)
 			printf(" %s", is[*s].name);
 		printf(" ]\n");
@@ -400,13 +479,13 @@ main()
 
 	Info infos[] = {
 	/* Tokens */
-	[0]     = { .name = "Num" },
-	[1]     = { .name = "+" },
-	[2]     = { .name = "-" },
-	[3]     = { .name = "*" },
-	[4]     = { .name = "(" },
-	[5]     = { .name = ")" },
-	[NT(-1)]= { .name = "EOF" },
+	[0]     = { .name = "$" },
+	[1]     = { .name = "Num" },
+	[2]     = { .name = "+" },
+	[3]     = { .name = "-" },
+	[4]     = { .name = "*" },
+	[5]     = { .name = "(" },
+	[6]     = { .name = ")" },
 	/* Non-terminals */
 	[NT(0)] = { .name = "A" },
 	[NT(1)] = { .name = "M" },
@@ -416,23 +495,23 @@ main()
 
 	Rule rules[] = {
 	{ NT(0), (Sym[]){ NT(1), S },           "A -> M" },
-	{ NT(0), (Sym[]){ NT(0), 1, NT(1), S }, "A -> A + M" },
-	{ NT(0), (Sym[]){ NT(0), 2, NT(1), S }, "A -> A - M" },
+	{ NT(0), (Sym[]){ NT(0), 2, NT(1), S }, "A -> A + M" },
+	{ NT(0), (Sym[]){ NT(0), 3, NT(1), S }, "A -> A - M" },
 	{ NT(1), (Sym[]){ NT(2), S },           "M -> B" },
-	{ NT(1), (Sym[]){ NT(1), 3, NT(2), S }, "M -> M * B" },
-	{ NT(2), (Sym[]){ 0, S },               "B -> Num" },
-	{ NT(2), (Sym[]){ 4, NT(0), 5, S },     "B -> ( A )" },
+	{ NT(1), (Sym[]){ NT(1), 4, NT(2), S }, "M -> M * B" },
+	{ NT(2), (Sym[]){ 1, S },               "B -> Num" },
+	{ NT(2), (Sym[]){ 5, NT(0), 6, S },     "B -> ( A )" },
 	{ NT(3), (Sym[]){ NT(0), S },           "S -> A" },
 	};
 
-	ntoks = NTOKS;
+	ntk = NTOKS;
 	nsy = sizeof infos / sizeof infos[0];
 	nrl = sizeof rules / sizeof rules[0];
 	is = infos;
 	rs = rules;
 
 	ginit();
-	for (Info *i=&is[ntoks]; i-is<nsy; i++) {
+	for (Info *i=&is[ntk]; i-is<nsy; i++) {
 		printf("Symbol %s\n", i->name);
 		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
 		printf("  First:   ");
@@ -445,6 +524,7 @@ main()
 		printf("\nState %d:\n", n+1);
 		dumpitem(st[n]);
 	}
+	tblgen();
 
 	exit(0);
 }
