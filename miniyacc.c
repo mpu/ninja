@@ -352,6 +352,8 @@ stgen(Sym sstart)
 			if (!i1)
 				die("out of memory");
 			*i1 = igoto(i, s);
+			if (!i1->nt)
+				continue;
 			iclose(i1);
 			stadd(&i1);
 			i->gtbl[s] = i1;
