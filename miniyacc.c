@@ -47,6 +47,9 @@ struct Arow {
 	int *t;
 };
 
+char srs[] = "shift/reduce conflict state %d token %s\n";
+char rrs[] = "reduce/reduce conflict state %d token %s\n";
+
 int nrl, nsy, nst, ntk;
 Rule *rs;  /* grammar rules (ordered, rcmp) */
 Info *is;  /* symbol information */
@@ -380,6 +383,35 @@ stgen(Sym sstart)
 }
 
 void
+tblset(int *tbl, Item *i, Term *t)
+{
+
+	Sym s, *l;
+
+	s = t->rule->rhs[t->dot];
+	if (s!=S) {
+		/* shift/goto */
+		if (tbl[s] && s<ntk && tbl[s] != i->gtbl[s]->id) {
+			assert(tbl[s] < 0);
+			printf(srs, i->id, is[s].name);
+			srconf++;
+		}
+		assert(i->gtbl[s]);
+		tbl[s] = i->gtbl[s]->id;
+	} else
+		/* reduce */
+		for (l=t->look; *l!=S; l++) {
+			/* default to shift if conflict occurs */
+			if (tbl[*l]) {
+				printf(tbl[*l]<0?rrs:srs, i->id, is[*l].name);
+				srconf += tbl[*l] > 0;
+				rrconf += tbl[*l] < 0;
+			} else
+				tbl[*l] = -(t->rule-rs + 1);
+		}
+}
+
+void
 tblgen()
 {
 	enum { H = 113 };
@@ -387,10 +419,8 @@ tblgen()
 		int red;
 		int cnt;
 	} hs[H];
-	Term *t;
 	Item *i;
 	Arow *a;
-	Sym *s, sdot;
 	int n, m, h;
 
 	for (n=0; n<nst; n++)
@@ -407,29 +437,20 @@ tblgen()
 		i = st[n];
 		for (h=0; h<H; h++)
 			hs[h].cnt = 0;
-		for (t=i->ts; t-i->ts<i->nt; t++) {
-			sdot = t->rule->rhs[t->dot];
-			if (sdot==S)
-				/* reduce */
-				for (s=t->look; *s!=S; s++) {
-					m = rs - t->rule;
-					hs[m % H].red = m;
-					hs[m % H].cnt++;
-					if (a->t[*s])
-						printf("!r %s %d\n", is[*s].name, i->id);
-					a->t[*s] = -(m+1);
-				}
-			else {
-				/* shift/goto */
-				if (!i->gtbl[sdot])
-					continue;
-				if (a->t[sdot] && sdot<ntk)
-					printf("!s %s %d\n", is[sdot].name, i->id);
-				a->t[sdot] = i->gtbl[sdot]->id;
-			}
-			a->ndef--;
-		}
+		for (m=0; m<i->nt; m++)
+			tblset(a->t, i, &i->ts[m]);
 		/* find most frequent reduce */
+		for (m=0; m<nsy; m++) {
+			h = a->t[m];
+			if (h==0)
+				continue;
+			a->ndef--;
+			if (h<0) {
+				h = -(h+1);
+				hs[h % H].red = h;
+				hs[h % H].cnt++;
+			}
+		}
 		for (h=0, m=0; h<H; h++) {
 			if (hs[h].cnt <= m)
 				continue;
