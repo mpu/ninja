@@ -462,8 +462,10 @@ tblgen()
 		/* zero out the most frequent reduce */
 		if (a->def>=0)
 			for (m=0, h=Red(a->def); m<nsy; m++)
-				if (a->t[m]==h)
+				if (a->t[m]==h) {
 					a->t[m] = 0;
+					a->ndef++;
+				}
 	}
 }
 
