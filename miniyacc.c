@@ -11,9 +11,10 @@ typedef struct Rule Rule;
 typedef struct Info Info;
 typedef struct Term Term;
 typedef struct Item Item;
+typedef struct Action Action;
 
 #define S ((Sym) -1)
-#define LastTok 128
+#define NulItem (Item){0,0,0,0}
 
 struct Rule {
 	Sym lhs;
@@ -37,9 +38,10 @@ struct Item {
 	Term *ts;
 	int nt;
 	Item **gtbl;
+	int id;
 };
 
-int nrl, nsy, nst;
+int nrl, nsy, nst, ntoks;
 Rule *rs;
 Info *is;
 Item **st;
@@ -129,10 +131,10 @@ first(Sym *stnc, Sym last)
 
 	f = stnc[0];
 	if (f == S) {
-		assert(last==S || last<LastTok);
+		assert(last==S || last<ntoks);
 		f = last;
 	}
-	if (f < LastTok) {
+	if (f < ntoks) {
 		s = salloc(1);
 		s[0] = f;
 		return s;
@@ -157,7 +159,7 @@ ginit()
 	Info *i;
 	Sym *s;
 
-	for (i=&is[LastTok]; i-is<nsy; i++)
+	for (i=&is[ntoks]; i-is<nsy; i++)
 		i->fst = salloc(0);
 	do {
 		chg = 0;
@@ -223,7 +225,7 @@ again:
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		rem = &t->rule->rhs[t->dot];
 		s = *rem++;
-		if (s < LastTok || s == S)
+		if (s < ntoks || s == S)
 			continue;
 		r = rfind(s);
 		assert(r);
@@ -252,7 +254,7 @@ igoto(Item *i, Sym s)
 	Item i1;
 	int n;
 
-	i1 = (Item){ 0, 0, 0 };
+	i1 = NulItem;
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
@@ -328,11 +330,11 @@ stgen(Sym sstart)
 	start = malloc(sizeof *start);
 	if (!start)
 		die("out of memory");
-	*start = (Item){ 0, 0, 0 };
+	*start = NulItem;
 	r = rfind(sstart);
 	assert(r);
 	eof = salloc(1);
-	eof[0] = (LastTok-1);                         /* FIXME */
+	eof[0] = (ntoks-1);                         /* FIXME */
 	iadd(start, &(Term){ r, 0, eof });
 	iclose(start);
 	stadd(&start);
@@ -352,9 +354,11 @@ stgen(Sym sstart)
 			if (!i1)
 				die("out of memory");
 			*i1 = igoto(i, s);
-			if (!i1->nt)
+			if (!i1->nt) {
+				free(i1);
+				i->gtbl[s] = 0;
 				continue;
-			iclose(i1);
+			}
 			stadd(&i1);
 			i->gtbl[s] = i1;
 		}
@@ -391,7 +395,8 @@ int
 main()
 {
 
-#define NT(n) (LastTok + n)
+#define NTOKS 7
+#define NT(n) (NTOKS + n)
 
 	Info infos[] = {
 	/* Tokens */
@@ -420,13 +425,14 @@ main()
 	{ NT(3), (Sym[]){ NT(0), S },           "S -> A" },
 	};
 
+	ntoks = NTOKS;
 	nsy = sizeof infos / sizeof infos[0];
 	nrl = sizeof rules / sizeof rules[0];
 	is = infos;
 	rs = rules;
 
 	ginit();
-	for (Info *i=&is[LastTok]; i-is<nsy; i++) {
+	for (Info *i=&is[ntoks]; i-is<nsy; i++) {
 		printf("Symbol %s\n", i->name);
 		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
 		printf("  First:   ");
@@ -434,11 +440,9 @@ main()
 			printf(" %s", is[*s].name);
 		printf("\n");
 	}
-
 	stgen(NT(3));
-
 	for (int n=0; n<nst; n++) {
-		printf("\nState %d:\n", n);
+		printf("\nState %d:\n", n+1);
 		dumpitem(st[n]);
 	}
 
