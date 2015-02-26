@@ -497,17 +497,17 @@ tblopt()
 			dsp--;
 	again:
 		for (t=m; t<ntk; t++) {
-			if (a->t[m] && chk[dsp+t]) {
+			if (a->t[t] && chk[dsp+t]) {
 				dsp++;
 				goto again;
 			}
 		}
 		adsp[n] = dsp;
 		for (t=m; t<ntk; t++) {
-			if (!a->t[m])
+			if (!a->t[t])
 				continue;
-			chk[dsp+t] = n;
-			act[dsp+t] = a->t[m];
+			chk[dsp+t] = n+1;
+			act[dsp+t] = a->t[t];
 			if (dsp+t>=actsz)
 				actsz = dsp+t+1;
 		}
