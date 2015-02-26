@@ -516,6 +516,37 @@ tblopt()
 	printf("\nOptimizer report\n");
 	printf("  Actions count: %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
+
+	printf("\nDisp table:");
+	for (n=0; n<nst; n++) {
+		if (n%10 == 0)
+			printf("\n");
+		printf("%4d", adsp[n]);
+		if (n == nst-1)
+			printf("\n");
+		else
+			printf(", ");
+	}
+	printf("Action table:");
+	for (n=0; n<actsz; n++) {
+		if (n%10 == 0)
+			printf("\n");
+		printf("%4d", act[n]);
+		if (n == actsz-1)
+			printf("\n");
+		else
+			printf(", ");
+	}
+	printf("Check table:");
+	for (n=0; n<actsz; n++) {
+		if (n%10 == 0)
+			printf("\n");
+		printf("%4d", chk[n]);
+		if (n == actsz-1)
+			printf("\n");
+		else
+			printf(", ");
+	}
 }
 
 void
