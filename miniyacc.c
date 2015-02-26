@@ -479,7 +479,7 @@ void
 tblopt()
 {
 	Arow **ao, *a;
-	int n, m, t, dsp;
+	int n, m, t, sn, dsp;
 
 	actsz = 0;
 	ao = malloc(nst * sizeof ao[0]);
@@ -493,6 +493,7 @@ tblopt()
 	qsort(ao, nst, sizeof ao[0], pacmp);
 	for (n=0; n<nst; n++) {
 		a = ao[n];
+		sn = a-as + 1;
 		for (m=0, dsp=0; m<ntk && a->t[m]==0; m++)
 			dsp--;
 	again:
@@ -506,7 +507,7 @@ tblopt()
 		for (t=m; t<ntk; t++) {
 			if (!a->t[t])
 				continue;
-			chk[dsp+t] = n+1;
+			chk[dsp+t] = sn;
 			act[dsp+t] = a->t[t];
 			if (dsp+t>=actsz)
 				actsz = dsp+t+1;
