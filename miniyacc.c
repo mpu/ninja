@@ -446,7 +446,7 @@ tblgen()
 			h = a->t[m];
 			if (h==0)
 				continue;
-			a->ndef--;
+			a->ndef -= m<ntk;
 			if (h<=Red(0)) {
 				h = Red(h);
 				hs[h % H].red = h;
@@ -461,7 +461,7 @@ tblgen()
 		}
 		/* zero out the most frequent reduce */
 		if (a->def>=0)
-			for (m=0, h=Red(a->def); m<nsy; m++)
+			for (m=0, h=Red(a->def); m<ntk; m++)
 				if (a->t[m]==h) {
 					a->t[m] = 0;
 					a->ndef++;
