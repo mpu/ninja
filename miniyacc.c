@@ -469,6 +469,55 @@ tblgen()
 	}
 }
 
+int
+pacmp(const void *a, const void *b)
+{
+	return (*(Arow **)a)->ndef - (*(Arow **)b)->ndef;
+}
+
+void
+tblopt()
+{
+	Arow **ao, *a;
+	int n, m, t, dsp;
+
+	actsz = 0;
+	ao = malloc(nst * sizeof ao[0]);
+	act = calloc(nst*ntk, sizeof act[0]);
+	chk = calloc(nst*ntk, sizeof chk[0]);
+	adsp = malloc(nst * sizeof adsp[0]);
+	if (!ao || !act || !chk || !adsp)
+		die("out of memory");
+	for (n=0; n<nst; n++)
+		ao[n] = &as[n];
+	qsort(ao, nst, sizeof ao[0], pacmp);
+	for (n=0; n<nst; n++) {
+		a = ao[n];
+		for (m=0, dsp=0; m<ntk && a->t[m]==0; m++)
+			dsp--;
+	again:
+		for (t=m; t<ntk; t++) {
+			if (a->t[m] && chk[dsp+t]) {
+				dsp++;
+				goto again;
+			}
+		}
+		adsp[n] = dsp;
+		for (t=m; t<ntk; t++) {
+			if (!a->t[m])
+				continue;
+			chk[dsp+t] = n;
+			act[dsp+t] = a->t[m];
+			if (dsp+t>=actsz)
+				actsz = dsp+t+1;
+		}
+	}
+	n = nst*ntk;
+	printf("\nOptimizer report\n");
+	printf("  Actions count: %d\n", n);
+	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
+}
+
 void
 dumpitem(Item *i)
 {
@@ -550,6 +599,7 @@ main()
 		dumpitem(st[n]);
 	}
 	tblgen();
+	tblopt();
 
 	exit(0);
 }
