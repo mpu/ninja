@@ -562,47 +562,48 @@ actgen()
 	printf("\nOptimizer report\n");
 	printf("  Tables size:   %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
+}
 
-	printf("\nGoto disp table:");
-	for (n=0; n<nnt; n++) {
-		if (n%10 == 0)
+void
+aout(char *name, int *t, int n)
+{
+	int i;
+
+	printf("short %s[] = {", name);
+	for (i=0; i<n; i++) {
+		if (i % 10 == 0)
 			printf("\n");
-		printf("%4d", gdsp[n]);
-		if (n == nnt-1)
-			printf("\n");
+		printf("%4d", t[i]);
+		if (i == n-1)
+			printf("\n};\n");
 		else
 			printf(", ");
 	}
-	printf("\nAction disp table:");
-	for (n=0; n<nst; n++) {
-		if (n%10 == 0)
-			printf("\n");
-		printf("%4d", adsp[n]);
-		if (n == nst-1)
-			printf("\n");
-		else
-			printf(", ");
-	}
-	printf("Action table:");
-	for (n=0; n<actsz; n++) {
-		if (n%10 == 0)
-			printf("\n");
-		printf("%4d", act[n]);
-		if (n == actsz-1)
-			printf("\n");
-		else
-			printf(", ");
-	}
-	printf("Check table:");
-	for (n=0; n<actsz; n++) {
-		if (n%10 == 0)
-			printf("\n");
-		printf("%4d", chk[n]);
-		if (n == actsz-1)
-			printf("\n");
-		else
-			printf(", ");
-	}
+}
+
+void
+tblout()
+{
+	int *o, n;
+
+	o = yalloc(nrl+nst+nsy, sizeof o[0]);
+	for (n=0; n<nrl; n++)
+		o[n] = smem(rs[n].rhs, S);
+	aout("yyr1", o, nrl);
+	for (n=0; n<nrl; n++)
+		o[n] = rs[n].lhs-ntk;
+	aout("yyr2", o, nrl);
+	for (n=0; n<nst; n++)
+		o[n] = as[n].def;
+	aout("yyadef", o, nst);
+	for (n=0; n<nsy-ntk; n++)
+		o[n] = gs[n].def;
+	aout("yygdef", o, nsy-ntk);
+	aout("yyadsp", adsp, nst);
+	aout("yygdsp", gdsp, nsy-ntk);
+	aout("yyact", act, actsz);
+	aout("yychk", chk, actsz);
+	free(o);
 }
 
 void
@@ -687,6 +688,7 @@ main()
 	}
 	tblgen();
 	actgen();
+	tblout();
 
 	exit(0);
 }
