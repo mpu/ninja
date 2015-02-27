@@ -29,7 +29,7 @@ possible.
   - yyadsp  displacements for actions in yyact
   - yygdsp  displacements for gotos in yyact
   - yyact   state ⨉ tok -> action
-            symbol ⨉ state -> state
+            state ⨉ symbol -> state
   - yychk   validation table for yyact
 
 States are indexed starting from 1.  A postive
