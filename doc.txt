@@ -32,12 +32,41 @@ possible.
             state ⨉ symbol -> state
   - yychk   validation table for yyact
 
-States are indexed starting from 1.  A postive
-action is a shift action, the value of the action
-is the destination state.  A negative action is
-a reduce by the rule whose number is the opposite
-of the action minus two.  A 0 action indicates
-the default action.  This one is either -1,
-indicating an error state, or a rule number to
-reduce.  A -1 in the action table marks an
-explicit parsing error.
+A non-negative action is a shift action, the
+value of the action is the destination state.
+An action <= -2 is a reduce by the rule whose
+number is the opposite of the action minus two.
+A missing action in yyact is the default action.
+This one is either -1, indicating an error state,
+or a rule number to reduce.  A -1 in the action
+table marks an explicit parsing error.
+
++ Notes
+
+++ About reduces
+
+Even though it is fairly obvious that in a
+single state their can bit shifts towards
+different states.  It is also true that,
+depending on the lookahead, their can be
+multiple reduces.  For an example, consider
+the following grammar:
+
+  S -> A c | B
+  A -> c
+  B -> c
+
+While possible, this case happens extremely
+rarely in practice, even on large languages.
+
+++ About goto
+
+It is impossible that a goto on two different
+symbols yields to the same state, so if the
+goto table is indexed by states first and then
+non-terminal, there is no point in having a
+default action.
+
+The dragon book recommends to index the table
+first by symbol, and then by state.  In this
+case, a default goto is helpful.

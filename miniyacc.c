@@ -391,12 +391,12 @@ tblset(int *tbl, Item *i, Term *t)
 	s = t->rule->rhs[t->dot];
 	if (s!=S) {
 		/* shift/goto */
+		assert(i->gtbl[s]);
 		if (tbl[s] && s<ntk && tbl[s] != i->gtbl[s]->id) {
 			assert(tbl[s] < 0);
 			printf(srs, i->id, is[s].name);
 			srconf++;
 		}
-		assert(i->gtbl[s]);
 		tbl[s] = i->gtbl[s]->id;
 	} else
 		/* reduce */
@@ -484,13 +484,15 @@ tblopt()
 	actsz = 0;
 	ao = malloc(nst * sizeof ao[0]);
 	act = calloc(nst*ntk, sizeof act[0]);
-	chk = calloc(nst*ntk, sizeof chk[0]);
+	chk = malloc(nst*ntk * sizeof chk[0]);
 	adsp = malloc(nst * sizeof adsp[0]);
 	if (!ao || !act || !chk || !adsp)
 		die("out of memory");
 	for (n=0; n<nst; n++)
 		ao[n] = &as[n];
 	qsort(ao, nst, sizeof ao[0], pacmp);
+	for (n=0; n<nst*ntk; n++)
+		chk[n] = -1;
 	for (n=0; n<nst; n++) {
 		a = ao[n];
 		for (m=0, dsp=0; m<ntk && a->t[m]==0; m++)
@@ -500,7 +502,7 @@ tblopt()
 		 * trickier than it looks.
 		 */
 		for (t=0, m=dsp; t<ntk; t++, m++)
-			if (m>=0 && chk[m])
+			if (m>=0 && chk[m]>=0)
 			if ((a->t[t] && (chk[m]!=t || act[m]!=a->t[t]))
 			|| (!a->t[t] && chk[m]==t)) {
 				dsp++;
@@ -630,7 +632,7 @@ main()
 	}
 	stgen(NT(3));
 	for (int n=0; n<nst; n++) {
-		printf("\nState %d:\n", n+1);
+		printf("\nState %d:\n", n);
 		dumpitem(st[n]);
 	}
 	tblgen();
