@@ -586,6 +586,7 @@ tblout()
 {
 	int *o, n;
 
+	printf("short yyntoks = %d;\n", ntk);
 	o = yalloc(nrl+nst+nsy, sizeof o[0]);
 	for (n=0; n<nrl; n++)
 		o[n] = smem(rs[n].rhs, S);
