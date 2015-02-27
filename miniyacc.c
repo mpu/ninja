@@ -532,7 +532,7 @@ actgen()
 			}
 	}
 	/* fill in gotos */
-	nnt = nsy-ntk
+	nnt = nsy-ntk;
 	gdsp = yalloc(nnt, sizeof gdsp[0]);
 	for (n=0; n<nnt; n++)
 		o[n] = &gs[n];
@@ -544,7 +544,7 @@ actgen()
 			dsp--;
 	retryg:
 		for (t=m; t<nst; t++)
-			if (chk[dsp+t]>=0) {
+			if (chk[dsp+t]>=0 && r->t[t]) {
 				dsp++;
 				goto retryg;
 			}
