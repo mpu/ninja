@@ -560,7 +560,7 @@ actgen()
 	free(o);
 	n = nst*nsy;
 	printf("\nOptimizer report\n");
-	printf("  Tables size:   %d\n", n);
+	printf("  Tables size: %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
 }
 
@@ -597,11 +597,20 @@ tblout()
 	for (n=0; n<nst; n++)
 		o[n] = as[n].def;
 	aout("yyadef", o, nst);
-	for (n=0; n<nsy-ntk; n++)
+	for (n=0; n<nsy-ntk; n++) {
 		o[n] = gs[n].def;
+		assert(o[n]>0 || o[n]==-1);
+		if (o[n]>0)
+			o[n]--;
+	}
 	aout("yygdef", o, nsy-ntk);
 	aout("yyadsp", adsp, nst);
 	aout("yygdsp", gdsp, nsy-ntk);
+	for (n=0; n<actsz; n++)
+		if (act[n]>=0) {
+			assert(act[n]!=0);
+			act[n]--;
+		}
 	aout("yyact", act, actsz);
 	aout("yychk", chk, actsz);
 	free(o);
