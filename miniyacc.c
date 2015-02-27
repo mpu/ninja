@@ -11,7 +11,7 @@ typedef struct Rule Rule;
 typedef struct Info Info;
 typedef struct Term Term;
 typedef struct Item Item;
-typedef struct Arow Arow;
+typedef struct Row Row;
 
 #define S ((Sym) -1)
 #define NulItem (Item){0,0,0,0}
@@ -42,7 +42,7 @@ struct Item {
 	int id;
 };
 
-struct Arow {
+struct Row {
 	int def;
 	int ndef;
 	int *t;
@@ -55,7 +55,8 @@ int nrl, nsy, nst, ntk;
 Rule *rs;  /* grammar rules (ordered, rcmp) */
 Info *is;  /* symbol information */
 Item **st; /* LALR(1) states (ordered, icmp) */
-Arow *as;  /* action table */
+Row *as;   /* action table [state][tok] */
+Row *gs;   /* goto table   [sym][state] */
 
 int srconf, rrconf;
 int actsz;
@@ -69,6 +70,17 @@ die(char *s)
 {
 	fprintf(stderr, "%s\n", s);
 	exit(1);
+}
+
+void *
+yalloc(size_t n, size_t o)
+{
+	void *p;
+
+	p = calloc(n, o);
+	if (!p)
+		die("out of memory");
+	return p;
 }
 
 int
@@ -96,9 +108,7 @@ salloc(int n)
 {
 	Sym *s;
 
-	s = malloc((n+1) * sizeof s[0]);
-	if (!s)
-		die("out of memory");
+	s = yalloc(n+1, sizeof s[0]);
 	s[n] = S;
 	return s;
 }
@@ -345,9 +355,7 @@ stgen(Sym sstart)
 	Item *start, *i, *i1;
 	int n;
 
-	start = malloc(sizeof *start);
-	if (!start)
-		die("out of memory");
+	start = yalloc(1, sizeof *start);
 	*start = NulItem;
 	r = rfind(sstart);
 	assert(r);
@@ -364,13 +372,9 @@ stgen(Sym sstart)
 			if (!i->gtbl)
 				break;
 		}
-		i->gtbl = malloc(nsy * sizeof i->gtbl[0]);
-		if (!i->gtbl)
-			die("out of memory");
+		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
 		for (s=0; s<nsy; s++) {
-			i1 = malloc(sizeof *i1);
-			if (!i1)
-				die("out of memory");
+			i1 = yalloc(1, sizeof *i1);
 			*i1 = igoto(i, s);
 			if (!i1->nt) {
 				free(i1);
@@ -391,6 +395,8 @@ tblset(int *tbl, Item *i, Term *t)
 	s = t->rule->rhs[t->dot];
 	if (s!=S) {
 		/* shift/goto */
+		if (s>=ntk)
+			return;
 		assert(i->gtbl[s]);
 		if (tbl[s] && s<ntk && tbl[s] != i->gtbl[s]->id) {
 			assert(tbl[s] < 0);
@@ -414,116 +420,160 @@ tblset(int *tbl, Item *i, Term *t)
 }
 
 void
+setdef(Row *r, int w, int top)
+{
+	int n, m, x, cnt, def, max;
+
+	max = 0;
+	def = -1;
+	r->ndef = 0;
+	for (n=0; n<w; n++) {
+		x = r->t[n];
+		if (x==0)
+			r->ndef++;
+		if (x>=top || x==0)
+			continue;
+		cnt = 1;
+		for (m=n+1; m<w; m++)
+			if (r->t[m]==x)
+				cnt++;
+		if (cnt>max) {
+			def = x;
+			max = cnt;
+		}
+	}
+	r->def = def;
+	if (max!=0)
+		/* zero out the most frequent entry */
+		for (n=0; n<w; n++)
+			if (r->t[n]==def) {
+				r->t[n] = 0;
+				r->ndef++;
+			}
+}
+
+void
 tblgen()
 {
-	enum { H = 113 };
-	struct {
-		int red;
-		int cnt;
-	} hs[H];
+	Row *r;
 	Item *i;
-	Arow *a;
-	int n, m, h;
+	int n, m;
 
 	for (n=0; n<nst; n++)
 		st[n]->id = n+1;
-	as = malloc(nst * sizeof as[0]);
-	if (!as)
-		die("out of memory");
-	for (n=0, a=as; n<nst; n++, a++) {
-		a->def = -1;
-		a->ndef = nsy;
-		a->t = calloc(nsy, sizeof a->t[0]);
-		if (!a->t)
-			die("out of memory");
-		i = st[n];
-		for (h=0; h<H; h++)
-			hs[h].cnt = 0;
-		for (m=0; m<i->nt; m++)
-			tblset(a->t, i, &i->ts[m]);
-		/* find most frequent reduce */
-		for (m=0; m<nsy; m++) {
-			h = a->t[m];
-			if (h==0)
-				continue;
-			a->ndef -= m<ntk;
-			if (h<=Red(0)) {
-				h = Red(h);
-				hs[h % H].red = h;
-				hs[h % H].cnt++;
-			}
-		}
-		for (h=0, m=0; h<H; h++) {
-			if (hs[h].cnt <= m)
-				continue;
-			m = hs[h].cnt;
-			a->def = hs[h].red;
-		}
-		/* zero out the most frequent reduce */
-		if (a->def>=0)
-			for (m=0, h=Red(a->def); m<ntk; m++)
-				if (a->t[m]==h) {
-					a->t[m] = 0;
-					a->ndef++;
-				}
+	as = yalloc(nst, sizeof as[0]);
+	gs = yalloc(nsy-ntk, sizeof gs[0]);
+	/* fill action table */
+	for (n=0; n<nst; n++) {
+		r = &as[n];
+		r->t = yalloc(ntk, sizeof r->t[0]);
+		for (i=st[n], m=0; m<i->nt; m++)
+			tblset(r->t, i, &i->ts[m]);
+		setdef(r, ntk, -1);
+		r->def = Red(r->def); /* Red(-1) == -1 */
+	}
+	/* fill goto table */
+	for (n=ntk; n<nsy; n++) {
+		r = &gs[n-ntk];
+		r->t = yalloc(nst, sizeof r->t[0]);
+		for (m=0; m<nst; m++)
+			if (st[m]->gtbl[n])
+				r->t[m] = st[m]->gtbl[n]->id;
+		setdef(r, nst, nst+1);
 	}
 }
 
 int
-pacmp(const void *a, const void *b)
+prcmp(const void *a, const void *b)
 {
-	return (*(Arow **)a)->ndef - (*(Arow **)b)->ndef;
+	return (*(Row **)a)->ndef - (*(Row **)b)->ndef;
 }
 
 void
-tblopt()
+actgen()
 {
-	Arow **ao, *a;
-	int n, m, t, dsp;
+	Row **o, *r;
+	int n, m, t, dsp, nnt;
 
 	actsz = 0;
-	ao = malloc(nst * sizeof ao[0]);
-	act = calloc(nst*ntk, sizeof act[0]);
-	chk = malloc(nst*ntk * sizeof chk[0]);
-	adsp = malloc(nst * sizeof adsp[0]);
-	if (!ao || !act || !chk || !adsp)
-		die("out of memory");
-	for (n=0; n<nst; n++)
-		ao[n] = &as[n];
-	qsort(ao, nst, sizeof ao[0], pacmp);
-	for (n=0; n<nst*ntk; n++)
+	o = yalloc(nst+nsy, sizeof o[0]);
+	act = yalloc(nst*nsy, sizeof act[0]);
+	chk = yalloc(nst*nsy, sizeof chk[0]);
+	adsp = yalloc(nst, sizeof adsp[0]);
+	for (n=0; n<nst*nsy; n++)
 		chk[n] = -1;
+	/* fill in actions */
+	for (n=0; n<nst; n++)
+		o[n] = &as[n];
+	qsort(o, nst, sizeof o[0], prcmp);
 	for (n=0; n<nst; n++) {
-		a = ao[n];
-		for (m=0, dsp=0; m<ntk && a->t[m]==0; m++)
+		r = o[n];
+		dsp = 0;
+		for (m=0; m<ntk && r->t[m]==0; m++)
 			dsp--;
-	again:
+	retrya:
 		/* The invariant here is even
 		 * trickier than it looks.
 		 */
-		for (t=0, m=dsp; t<ntk; t++, m++)
-			if (m>=0 && chk[m]>=0)
-			if ((a->t[t] && (chk[m]!=t || act[m]!=a->t[t]))
-			|| (!a->t[t] && chk[m]==t)) {
+		for (t=0; t<ntk; t++)
+			if ((m=dsp+t)>=0 && chk[m]>=0)
+			if ((r->t[t] && (chk[m]!=t || act[m]!=r->t[t]))
+			|| (!r->t[t] && chk[m]==t)) {
 				dsp++;
-				goto again;
+				goto retrya;
 			}
-		adsp[a-as] = dsp;
-		for (t=0; t<ntk; t++) {
-			if (!a->t[t])
-				continue;
-			chk[dsp+t] = t;
-			act[dsp+t] = a->t[t];
-			if (dsp+t>=actsz)
-				actsz = dsp+t+1;
-		}
+		adsp[r-as] = dsp;
+		for (t=0; t<ntk; t++)
+			if (r->t[t]) {
+				chk[dsp+t] = t;
+				act[dsp+t] = r->t[t];
+				if (dsp+t>=actsz)
+					actsz = dsp+t+1;
+			}
 	}
-	n = nst*ntk;
+	/* fill in gotos */
+	nnt = nsy-ntk
+	gdsp = yalloc(nnt, sizeof gdsp[0]);
+	for (n=0; n<nnt; n++)
+		o[n] = &gs[n];
+	qsort(o, nnt, sizeof o[0], prcmp);
+	for (n=0; n<nnt; n++) {
+		r = o[n];
+		dsp = 0;
+		for (m=0; m<nst && r->t[m]==0; m++)
+			dsp--;
+	retryg:
+		for (t=m; t<nst; t++)
+			if (chk[dsp+t]>=0) {
+				dsp++;
+				goto retryg;
+			}
+		gdsp[r-gs] = dsp;
+		for (t=m; t<nst; t++)
+			if (r->t[t]) {
+				chk[dsp+t] = ntk+(r-gs);
+				act[dsp+t] = r->t[t];
+				if (dsp+t>=actsz)
+					actsz = dsp+t+1;
+			}
+	}
+	free(o);
+	n = nst*nsy;
 	printf("\nOptimizer report\n");
-	printf("  Actions count: %d\n", n);
+	printf("  Tables size:   %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
 
-	printf("\nDisp table:");
+	printf("\nGoto disp table:");
+	for (n=0; n<nnt; n++) {
+		if (n%10 == 0)
+			printf("\n");
+		printf("%4d", gdsp[n]);
+		if (n == nnt-1)
+			printf("\n");
+		else
+			printf(", ");
+	}
+	printf("\nAction disp table:");
 	for (n=0; n<nst; n++) {
 		if (n%10 == 0)
 			printf("\n");
@@ -636,7 +686,7 @@ main()
 		dumpitem(st[n]);
 	}
 	tblgen();
-	tblopt();
+	actgen();
 
 	exit(0);
 }

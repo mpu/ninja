@@ -25,11 +25,12 @@ possible.
 
   - yyr1    rule -> arity of rhs
   - yyr2    rule -> lhs symbol
-  - yydef   state -> default reduce (-1 if none)
+  - yyadef  state -> default reduce (-1 if none)
+  - yygdef  symbol -> default goto
   - yyadsp  displacements for actions in yyact
   - yygdsp  displacements for gotos in yyact
   - yyact   state ⨉ tok -> action
-            state ⨉ symbol -> state
+            symbol ⨉ state -> state
   - yychk   validation table for yyact
 
 A non-negative action is a shift action, the
@@ -40,6 +41,13 @@ A missing action in yyact is the default action.
 This one is either -1, indicating an error state,
 or a rule number to reduce.  A -1 in the action
 table marks an explicit parsing error.
+
+The action and the goto tables are all merged in
+yyact.  The action table is indexed first on state
+and second on tokens.  The checking for the actions
+is performed on tokens to be able to merge several
+rows.  The checking for gotos is performed on the
+symbols.
 
 + Notes
 
