@@ -425,7 +425,7 @@ tblset(int *tbl, Item *i, Term *t)
 		assert(i->gtbl[s]);
 		if (tbl[s] && tbl[s] != i->gtbl[s]->id) {
 			assert(tbl[s] < 0);
-			printf(srs, i->id, is[s].name);
+			printf(srs, i->id-1, is[s].name);
 			srconf++;
 		}
 		tbl[s] = i->gtbl[s]->id;
@@ -434,10 +434,10 @@ tblset(int *tbl, Item *i, Term *t)
 		for (l=t->look; (s=*l)!=S; l++) {
 			/* default to shift if conflict occurs */
 			if (tbl[s]<0) {
-				printf(rrs, i->id, is[s].name);
+				printf(rrs, i->id-1, is[s].name);
 				rrconf++;
 			} else if (tbl[s]>0) {
-				printf(srs, i->id, is[s].name);
+				printf(srs, i->id-1, is[s].name);
 				srconf++;
 			} else
 				tbl[s] = Red(t->rule-rs);
@@ -995,7 +995,7 @@ getgram()
 			}
 		} while (tk==TBar);
 		if (tk!=TSemi)
-			die("syntax error, ; or : expected");
+			die("syntax error, ; or | expected");
 	}
 }
 
