@@ -17,13 +17,13 @@
 %token <num> NUM
 
 %left '+' '-'
-%left '*'
+%nonassoc '*'
 %nonassoc UMIN
 
 %%
 
 S:
- | A { printf("-> %d\n", $1); }
+ | S A { printf("-> %d\n", $2); }
  ;
 
 A: NUM              { $$ = $1; }
