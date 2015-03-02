@@ -1076,8 +1076,9 @@ actout(Rule *r)
 		}
 		else if (c == '<') {
 			ty = tya;
-			while (istok(*p) && ty-tya<IdntSz)
+			while (istok(*p) && ty-tya<IdntSz-1)
 				*ty++ = *p++;
+			*ty = 0;
 			if (*p++!='>') {
 				lineno = i;
 				die("unclosed tag field");
