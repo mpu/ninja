@@ -61,17 +61,13 @@ loop:
 	n = yyadsp[s] + tk;
 	if (n < 0 || n >= ActSz || yychk[n] != tk) {
 		r = yyadef[s];
-		if (r < 0) {
-			puts("parse error!");
+		if (r < 0)
 			return -1;
-		}
 		goto reduce;
 	}
 	n = yyact[n];
-	if (n == -1) {
-		puts("parse error!");
+	if (n == -1)
 		return -1;
-	}
 	if (n < 0) {
 		r = - (n+2);
 		goto reduce;
@@ -79,10 +75,8 @@ loop:
 	tk = -1;
 stack:
 	ps++;
-	if (ps-stk >= StackSize) {
-		puts("parse stack overflow!");
-		return -1;
-	}
+	if (ps-stk >= StackSize)
+		return -2;
 	s = n;
 	ps->state = s;
 	ps->val = yyval;
@@ -127,6 +121,7 @@ reduce:
 
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum {
 	MaxLine = 1000,
@@ -139,6 +134,7 @@ lex()
 {
 	char c;
 
+	p += strspn(p, "\t ");
 	switch ((c=*p++)) {
 	case '+': return 2;
 	case '-': return 3;
@@ -162,8 +158,10 @@ int
 main()
 {
 	while ((p=fgets(line, MaxLine, stdin))) {
-		yyparse();
-		printf("-> %d\n", yyval);
+		if (yyparse() < 0)
+			puts("parse error!");
+		else
+			printf("-> %d\n", yyval);
 	}
 	return 0;
 }
