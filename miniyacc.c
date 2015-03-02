@@ -858,103 +858,103 @@ getdecls()
 	prec = 0;
 	tk = nexttk();
 	for (;;)
-		switch (tk) {
-		case TStart:
-			tk = nexttk();
-			if (tk!=TIdnt)
-				die("syntax error, ident expected after %start");
-			sstart = findsy(idnt, 1);
-			if (sstart<ntk)
-				die("%start cannot specify a token");
-			tk = nexttk();
-			break;
-		case TUnion:
-			tk = nexttk();
-			if (tk!=TLBrack)
-				die("syntax error, { expected after %union");
-			utype = cpycode();
-			tk = nexttk();
-			break;
-		case TLeft:
-			p = prec++;
-			a = ALeft;
-			goto addtoks;
-		case TRight:
-			p = prec++;
-			a = ARight;
-			goto addtoks;
-		case TNonassoc:
-			p = prec++;
-			a = ANonassoc;
-			goto addtoks;
-		case TToken:
-			p = -1;
-			a = ANone;
-		addtoks:
-			tk = gettype(type);
-			while (tk==TIdnt || tk==TTokchr) {
-				si = 0;
-				n = findsy(idnt, 0);
-				if (n>=MaxTk && n<nsy)
-					die("non-terminal redeclared as token");
-				if (n==nsy) {
-					if (ntk>=MaxTk)
-						die("too many tokens");
-					n = ntk++;
-				}
-				si = &is[n];
-				strcpy(si->name, idnt);
-				strcpy(si->type, type);
-				si->prec = p;
-				si->assoc = a;
-				tk = nexttk();
+	switch (tk) {
+	case TStart:
+		tk = nexttk();
+		if (tk!=TIdnt)
+			die("syntax error, ident expected after %start");
+		sstart = findsy(idnt, 1);
+		if (sstart<ntk)
+			die("%start cannot specify a token");
+		tk = nexttk();
+		break;
+	case TUnion:
+		tk = nexttk();
+		if (tk!=TLBrack)
+			die("syntax error, { expected after %union");
+		utype = cpycode();
+		tk = nexttk();
+		break;
+	case TLeft:
+		p = prec++;
+		a = ALeft;
+		goto addtoks;
+	case TRight:
+		p = prec++;
+		a = ARight;
+		goto addtoks;
+	case TNonassoc:
+		p = prec++;
+		a = ANonassoc;
+		goto addtoks;
+	case TToken:
+		p = -1;
+		a = ANone;
+	addtoks:
+		tk = gettype(type);
+		while (tk==TIdnt || tk==TTokchr) {
+			si = 0;
+			n = findsy(idnt, 0);
+			if (n>=MaxTk && n<nsy)
+				die("non-terminal redeclared as token");
+			if (n==nsy) {
+				if (ntk>=MaxTk)
+					die("too many tokens");
+				n = ntk++;
 			}
-			break;
-		case TType:
-			tk = gettype(type);
-			if (type[0]==0)
-				die("syntax error, type expected");
-			while (tk==TIdnt) {
-				si = 0;
-				n = findsy(idnt, 1);
-				if (n<ntk)
-					die("token redeclared as non-terminal");
-				if (n==nsy) {
-					nsy++;
-				}
-				si = &is[n];
-				strcpy(si->name, idnt);
-				strcpy(si->type, idnt);
-				tk = nexttk();
-			}
-			break;
-		case TLL:
-			fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
-			for (;;) {
-				c = fgetc(fin);
-				if (c == EOF)
-					die("syntax error, unclosed %{");
-				if (c == '%') {
-					c1 = fgetc(fin);
-					if (c1 == '}') {
-						fputs("\n", fout);
-						break;
-					}
-					ungetc(c1, fin);
-				}
-				if (c == '\n')
-					lineno++;
-				fputc(c, fout);
-			}
+			si = &is[n];
+			strcpy(si->name, idnt);
+			strcpy(si->type, type);
+			si->prec = p;
+			si->assoc = a;
 			tk = nexttk();
-			break;
-		case TPP:
-			return;
-		case TEof:
-			die("syntax error, unfinished declarations");
-		default:
-			die("syntax error, declaration expected");
 		}
+		break;
+	case TType:
+		tk = gettype(type);
+		if (type[0]==0)
+			die("syntax error, type expected");
+		while (tk==TIdnt) {
+			si = 0;
+			n = findsy(idnt, 1);
+			if (n<ntk)
+				die("token redeclared as non-terminal");
+			if (n==nsy) {
+				nsy++;
+			}
+			si = &is[n];
+			strcpy(si->name, idnt);
+			strcpy(si->type, idnt);
+			tk = nexttk();
+		}
+		break;
+	case TLL:
+		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+		for (;;) {
+			c = fgetc(fin);
+			if (c == EOF)
+				die("syntax error, unclosed %{");
+			if (c == '%') {
+				c1 = fgetc(fin);
+				if (c1 == '}') {
+					fputs("\n", fout);
+					break;
+				}
+				ungetc(c1, fin);
+			}
+			if (c == '\n')
+				lineno++;
+			fputc(c, fout);
+		}
+		tk = nexttk();
+		break;
+	case TPP:
+		return;
+	case TEof:
+		die("syntax error, unfinished declarations");
+	default:
+		die("syntax error, declaration expected");
+	}
 }
 
 void
