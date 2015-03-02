@@ -7,7 +7,15 @@
 	int lex(void);
 %}
 
-%token NUM
+%union {
+	int sum;
+	int mul;
+	int num;
+}
+
+%type <sum> A
+%type <mul> M
+%token <num> NUM
 
 %%
 
@@ -20,12 +28,12 @@ A: M       { $$ = $1; }
  | A '-' A { $$ = $1 - $3; }
  ;
 
-M: B       { $$ = $1; }
- | B '*' M { $$ = $1 * $3; }
+M: B       { $$ = $<num>1; }
+ | B '*' M { $$ = $<num>1 * $3; }
  ;
 
-B: NUM       { $$ = $1; }
- | '(' A ')' { $$ = $2; }
+B: NUM       { $<num>$ = $1; }
+ | '(' A ')' { $<num>$ = $2; }
  ;
 
 %%
@@ -54,7 +62,7 @@ lex()
 		return 0;
 	}
 	if (isdigit(c)) {
-		yylval = strtol(p-1, &p, 0);
+		yylval.num = strtol(p-1, &p, 0);
 		return 1;
 	}
 	puts("lex error!");

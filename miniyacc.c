@@ -900,7 +900,7 @@ getdecls()
 		if (tk!=TLBrack)
 			die("syntax error, { expected after %union");
 		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
-		fprintf(fout, "typedef %s YYSTYPE;\n", cpycode());
+		fprintf(fout, "typedef union %s YYSTYPE;\n", cpycode());
 		doty = 1;
 		tk = nexttk();
 		break;
@@ -953,7 +953,7 @@ getdecls()
 			}
 			si = &is[n];
 			strcpy(si->name, idnt);
-			strcpy(si->type, idnt);
+			strcpy(si->type, type);
 			tk = nexttk();
 		}
 		break;
@@ -1158,6 +1158,7 @@ init(int ac, char *av[])
 		f = av[2];
 		vflag = 1;
 	}
+	fins = f;
 	fin = fopen(f, "r");
 	p = strrchr(f, '.');
 	if (p)
@@ -1169,6 +1170,8 @@ init(int ac, char *av[])
 		fgrm = fopen(buf, "w");
 	if (!fin || !fout)
 		die("cannot open work files");
+	if (p)
+		*p = '.';
 }
 
 int
