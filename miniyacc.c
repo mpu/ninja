@@ -460,7 +460,7 @@ tblset(int *tbl, Item *i, Term *t)
 		case ARight:
 			tbl[s] = i->gtbl[s]->id;
 			break;
-		case ANone:
+		case ANonassoc:
 			tbl[s] = -1;
 			break;
 		}
@@ -481,7 +481,7 @@ tblset(int *tbl, Item *i, Term *t)
 			case ALeft:
 				tbl[s] = Red(t->rule-rs);
 				break;
-			case ANone:
+			case ANonassoc:
 				tbl[s] = -1;
 				break;
 			}
