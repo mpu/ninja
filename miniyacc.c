@@ -658,23 +658,23 @@ stdump()
 {
 	Term *t;
 	Sym *s;
-	int n, d;
+	int n, m, d;
 	Rule *r;
 	Info *i;
 
 	if (!fgrm)
 		return;
 	for (i=&is[MaxTk]; i-is<nsy; i++) {
-		fprintf(fgrm, "\nSymbol %s\n", i->name);
+		fprintf(fgrm, "Symbol %s\n", i->name);
 		fprintf(fgrm, "  Nullable: %s\n", i->nul ? "yes" : "no");
 		fprintf(fgrm, "  First:   ");
 		for (s=i->fst; *s!=S; s++)
 			fprintf(fgrm, " %s", is[*s].name);
+		fprintf(fgrm, "\n");
 	}
-	fprintf(fgrm, "\n");
-	for (n=0; n<nst; n++) {
-		fprintf(fgrm, "\nState %d:\n", n);
-		for (t=st[n]->ts; t-st[n]->ts<st[n]->nt; t++) {
+	for (m=0; m<nst; m++) {
+		fprintf(fgrm, "\nState %d:\n", m);
+		for (t=st[m]->ts; t-st[m]->ts<st[m]->nt; t++) {
 			n = 0;
 			r = t->rule;
 			d = t->dot;
@@ -691,6 +691,7 @@ stdump()
 			fprintf(fgrm, " ]\n");
 		}
 	}
+	fprintf(fgrm, "\n");
 }
 
 enum {
