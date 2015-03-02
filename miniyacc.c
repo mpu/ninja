@@ -72,8 +72,8 @@ char srs[] = "shift/reduce conflict state %d token %s\n";
 char rrs[] = "reduce/reduce conflict state %d token %s\n";
 
 int nrl, nsy, nst, ntk;
-Rule *rs;  /* grammar rules (ordered, rcmp) */
-Info *is;  /* symbol information */
+Rule rs[MaxRl]; /* grammar rules (ordered, rcmp) */
+Info is[MaxTk+MaxNt]; /* symbol information */
 Item **st; /* LALR(1) states (ordered, icmp) */
 Row *as;   /* action table [state][tok] */
 Row *gs;   /* goto table   [sym][state] */
@@ -874,9 +874,8 @@ getdecls()
 {
 	int tk, prec, p, a, c, c1, n;
 	Info *si;
-	char type[IdntSz];
+	char type[IdntSz], *s;
 
-	is = yalloc(MaxTk+MaxNt, sizeof is[0]);
 	strcpy(is[0].name, "$");
 	ntk = 1;
 	strcpy(is[Start].name, "@start");
@@ -900,7 +899,9 @@ getdecls()
 		if (tk!=TLBrack)
 			die("syntax error, { expected after %union");
 		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
-		fprintf(fout, "typedef union %s YYSTYPE;\n", cpycode());
+		s = cpycode();
+		fprintf(fout, "typedef union %s YYSTYPE;\n", s);
+		free(s);
 		doty = 1;
 		tk = nexttk();
 		break;
@@ -996,7 +997,6 @@ getgram()
 	Sym hd, *p;
 	Rule *r;
 
-	rs = yalloc(MaxRl, sizeof rs[0]);
 	for (;;) {
 		tk = nexttk();
 		if (tk==TPP || tk==TEof) {
