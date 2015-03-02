@@ -673,7 +673,7 @@ main()
 	{ NT(1), (Sym[]){ NT(1), 4, NT(2), S }, "M -> M * B" },
 	{ NT(2), (Sym[]){ 1, S },               "B -> Num" },
 	{ NT(2), (Sym[]){ 5, NT(0), 6, S },     "B -> ( A )" },
-	{ NT(3), (Sym[]){ NT(0), S },           "S -> A" },
+	{ NT(3), (Sym[]){ NT(0), 0, S },        "S -> A $" },
 	};
 
 	ntk = NTOKS;
