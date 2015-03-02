@@ -24,6 +24,8 @@ enum {
 	MaxTk = 500,
 	MaxNt = 500,
 	MaxRl = 1000,
+
+	Start = MaxTk,
 };
 
 struct Rule {
@@ -75,6 +77,9 @@ Info *is;  /* symbol information */
 Item **st; /* LALR(1) states (ordered, icmp) */
 Row *as;   /* action table [state][tok] */
 Row *gs;   /* goto table   [sym][state] */
+Sym sstart;/* start symbol */
+Item *ini; /* initial state */
+int doty;  /* type-checking enabled */
 
 int srconf, rrconf;
 int actsz;
@@ -82,13 +87,12 @@ int *act;
 int *chk;
 int *adsp;
 int *gdsp;
-Sym sstart;
-char *utype;
 
 int lineno = 1;
 char *fins;
 FILE *fin;
 FILE *fout;
+FILE *fgrm;
 
 void
 die(char *s)
@@ -373,27 +377,27 @@ stadd(Item **pi)
 	}
 }
 
-Item *
-stgen(Sym sstart)
+void
+stgen()
 {
 	Sym *eof, s;
 	Rule *r;
 	Item *start, *i, *i1;
 	int n;
 
-	start = yalloc(1, sizeof *start);
-	*start = NulItem;
-	r = rfind(sstart);
+	ini = i = yalloc(1, sizeof *start);
+	*i = NulItem;
+	r = rfind(Start);
 	assert(r);
 	eof = salloc(1);
 	eof[0] = 0;
-	iadd(start, &(Term){ r, 0, eof });
-	iclose(start);
-	stadd(&start);
+	iadd(i, &(Term){ r, 0, eof });
+	iclose(i);
+	stadd(&i);
 	for (;;) {
 		for (n=0;; n++) {
 			if (n>=nst)
-				return start;
+				return;
 			i = st[n];
 			if (!i->gtbl)
 				break;
@@ -584,10 +588,12 @@ actgen()
 			}
 	}
 	free(o);
+	/*
 	n = nst*(nsy-MaxTk + ntk);
 	printf("\nOptimizer report\n");
 	printf("  Tables size: %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
+	*/
 }
 
 void
@@ -612,7 +618,8 @@ tblout()
 {
 	int *o, n;
 
-	printf("short yyntoks = %d;\n", ntk);
+	fprintf(fout, "short yyini = %d;\n", ini->id-1);
+	fprintf(fout, "short yyntoks = %d;\n", ntk);
 	o = yalloc(nrl+nst+nsy, sizeof o[0]);
 	for (n=0; n<nrl; n++)
 		o[n] = smem(rs[n].rhs, S);
@@ -634,7 +641,8 @@ tblout()
 	aout("yygdsp", gdsp, nsy-MaxTk);
 	for (n=0; n<actsz; n++)
 		if (act[n]>=0) {
-			assert(act[n]!=0);
+			if (act[n]==0)
+				fprintf(stderr, "action burp! %d\n", n);
 			act[n]--;
 		}
 	aout("yyact", act, actsz);
@@ -643,28 +651,40 @@ tblout()
 }
 
 void
-dumpitem(Item *i)
+stdump()
 {
 	Term *t;
 	Sym *s;
 	int n, d;
 	Rule *r;
+	Info *i;
 
-	for (t=i->ts; t-i->ts<i->nt; t++) {
-		n = 0;
-		r = t->rule;
-		d = t->dot;
-		n += printf("  %s ->", is[r->lhs].name);
-		for (s=r->rhs; *s!=S; s++, d--)
-			n += printf(" %s%s", d ? "" : ". ", is[*s].name);
-		if (!d)
-			n += printf(" .");
-		while (n++<30)
-			putchar(' ');
-		printf(" [");
-		for (s=t->look; *s!=S; s++)
+	for (i=&is[MaxTk]; i-is<nsy; i++) {
+		printf("Symbol %s\n", i->name);
+		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
+		printf("  First:   ");
+		for (s=i->fst; *s!=S; s++)
 			printf(" %s", is[*s].name);
-		printf(" ]\n");
+		printf("\n");
+	}
+	for (n=0; n<nst; n++) {
+		printf("\nState %d:\n", n);
+		for (t=st[n]->ts; t-st[n]->ts<st[n]->nt; t++) {
+			n = 0;
+			r = t->rule;
+			d = t->dot;
+			n += printf("  %s ->", is[r->lhs].name);
+			for (s=r->rhs; *s!=S; s++, d--)
+				n += printf(" %s%s", d ? "" : ". ", is[*s].name);
+			if (!d)
+				n += printf(" .");
+			while (n++<30)
+				putchar(' ');
+			printf(" [");
+			for (s=t->look; *s!=S; s++)
+				printf(" %s", is[*s].name);
+			printf(" ]\n");
+		}
 	}
 }
 
@@ -853,7 +873,8 @@ getdecls()
 	is = yalloc(MaxTk+MaxNt, sizeof is[0]);
 	strcpy(is[0].name, "$");
 	ntk = 1;
-	nsy = MaxTk;
+	strcpy(is[Start].name, "@start");
+	nsy = MaxTk+1;
 	sstart = S;
 	prec = 0;
 	tk = nexttk();
@@ -872,7 +893,9 @@ getdecls()
 		tk = nexttk();
 		if (tk!=TLBrack)
 			die("syntax error, { expected after %union");
-		utype = cpycode();
+		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+		fprintf(fout, "typedef %s YYSTYPE;\n", cpycode());
+		doty = 1;
 		tk = nexttk();
 		break;
 	case TLeft:
@@ -949,6 +972,8 @@ getdecls()
 		tk = nexttk();
 		break;
 	case TPP:
+		if (!doty)
+			fprintf(fout, "typedef int YYSTYPE;\n");
 		return;
 	case TEof:
 		die("syntax error, unfinished declarations");
@@ -960,6 +985,7 @@ getdecls()
 void
 getgram()
 {
+	extern char *retcode;
 	int tk;
 	Sym hd, *p;
 	Rule *r;
@@ -968,6 +994,14 @@ getgram()
 	for (;;) {
 		tk = nexttk();
 		if (tk==TPP || tk==TEof) {
+			if (sstart==S)
+				die("syntax error, empty grammar");
+			r = &rs[nrl++];
+			r->lhs = Start;
+			r->rhs[0] = sstart;
+			r->rhs[1] = 0;
+			r->rhs[2] = S;
+			r->act = retcode;
 			qsort(rs, nrl, sizeof rs[0], rcmp);
 			return;
 		}
@@ -979,7 +1013,7 @@ getgram()
 		if (sstart==S)
 			sstart = hd;
 		do {
-			if (nrl>=MaxRl)
+			if (nrl>=MaxRl-1)
 				die("too many rules");
 			r = &rs[nrl++];
 			r->lhs = hd;
@@ -1002,6 +1036,105 @@ getgram()
 	}
 }
 
+void
+actout(Rule *r)
+{
+	long l;
+	int i, ar;
+	char c, *p, *ty, tya[IdntSz];
+
+	ar = smem(r->rhs, S);
+	p = r->act;
+	i = r->actln;
+	if (!p)
+		return;
+	while ((c=*p++))
+	switch (c) {
+	case '\n':
+		i++;
+	default:
+		fputc(c, fout);
+		break;
+	case '$':
+		c = *p++;
+		if (c == '$') {
+			fprintf(fout, "yyval");
+			if (doty) {
+				ty = is[r->lhs].type;
+				if (!ty[0]) {
+					lineno = i;
+					die("$$ has no type");
+				}
+				fprintf(fout, ".%s", ty);
+			}
+		}
+		else if (c == '<') {
+			ty = tya;
+			while (istok(*p) && ty-tya<IdntSz)
+				*ty++ = *p++;
+			if (*p++!='>') {
+				lineno = i;
+				die("unclosed tag field");
+			}
+			ty = tya;
+			c = *p++;
+			if (c == '$') {
+				fprintf(fout, "yyval.%s", ty);
+			} else {
+				if (!isdigit(*p++)) {
+					lineno = i;
+					die("number or $ expected afer tag field");
+				}
+				goto readnum;
+			}
+		}
+		else if (isdigit(c)) {
+			ty = 0;
+		readnum:
+			l = strtol(p-1, &p, 10);
+			if (l > ar) {
+				lineno = i;
+				die("invalid $n");
+			}
+			fprintf(fout, "ps[%d].val", (int)l);
+			if (doty) {
+				if (!ty && l>0)
+					ty = is[r->rhs[l-1]].type;
+				if (!ty || !ty[0]) {
+					lineno = i;
+					die("$n has no type");
+				}
+				fprintf(fout, ".%s", ty);
+			}
+		}
+	}
+	fputs("\n", fout);
+}
+
+void
+codeout()
+{
+	extern char *code0[], *code1[];
+	char **p;
+	Rule *r;
+	int n, c;
+
+	for (p=code0; *p; p++)
+		fputs(*p, fout);
+	for (n=0; n<nrl; n++) {
+		fprintf(fout, "\tcase %d:\n", n);
+		r = &rs[n];
+		fprintf(fout, "#line %d \"%s\"\n", r->actln, fins);
+		actout(r);
+		fputs("\t\tbreak;\n", fout);
+	}
+	for (p=code1; *p; p++)
+		fputs(*p, fout);
+	fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+	while ((c=fgetc(fin))!=EOF)
+		fputc(c, fout);
+}
+
 int
 main()
 {
@@ -1013,21 +1146,85 @@ main()
 	getdecls();
 	getgram();
 	ginit();
-	for (Info *i=&is[MaxTk]; i-is<nsy; i++) {
-		printf("Symbol %s\n", i->name);
-		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
-		printf("  First:   ");
-		for (Sym *s=i->fst; *s!=S; s++)
-			printf(" %s", is[*s].name);
-		printf("\n");
-	}
 	stgen(sstart);
-	for (int n=0; n<nst; n++) {
-		printf("\nState %d:\n", n);
-		dumpitem(st[n]);
-	}
+	//stdump();
 	tblgen();
 	actgen();
 	tblout();
+	codeout();
 	exit(0);
 }
+
+/* Glorious macros.
+	|sed 's|.*|"&\\n",|'
+*/
+
+char *retcode = "\t\tyyval = ps[1].val; return 0;";
+
+char *code0[] = {
+"\n",
+"YYSTYPE yylval, yyval;\n",
+"\n",
+"int\n",
+"yyparse()\n",
+"{\n",
+"	enum {\n",
+"		StackSize = 100,\n",
+"		ActSz = sizeof yyact / sizeof yyact[0],\n",
+"	};\n",
+"	struct {\n",
+"		YYSTYPE val;\n",
+"		int state;\n",
+"	} stk[StackSize], *ps;\n",
+"	int r, h, n, s, tk;\n",
+"\n",
+"	ps = stk;\n",
+"	ps->state = s = yyini;\n",
+"	tk = -1;\n",
+"loop:\n",
+"	if (tk <= 0) {\n",
+"		tk = lex();\n",
+"		yyval = yylval;\n",
+"	}\n",
+"	n = yyadsp[s] + tk;\n",
+"	if (n < 0 || n >= ActSz || yychk[n] != tk) {\n",
+"		r = yyadef[s];\n",
+"		if (r < 0)\n",
+"			return -1;\n",
+"		goto reduce;\n",
+"	}\n",
+"	n = yyact[n];\n",
+"	if (n == -1)\n",
+"		return -1;\n",
+"	if (n < 0) {\n",
+"		r = - (n+2);\n",
+"		goto reduce;\n",
+"	}\n",
+"	tk = -1;\n",
+"stack:\n",
+"	ps++;\n",
+"	if (ps-stk >= StackSize)\n",
+"		return -2;\n",
+"	s = n;\n",
+"	ps->state = s;\n",
+"	ps->val = yyval;\n",
+"	goto loop;\n",
+"reduce:\n",
+"	ps -= yyr1[r];\n",
+"	h = yyr2[r];\n",
+"	s = ps->state;\n",
+"	n = yygdsp[h] + s;\n",
+"	if (n < 0 || n >= ActSz || yychk[n] != yyntoks+h)\n",
+"		n = yygdef[h];\n",
+"	else\n",
+"		n = yyact[n];\n",
+"	switch (r) {\n",
+0
+};
+
+char *code1[] = {
+"	}\n",
+"	goto stack;\n",
+"}\n",
+0
+};
