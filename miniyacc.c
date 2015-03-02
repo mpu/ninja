@@ -29,7 +29,8 @@ enum {
 struct Rule {
 	Sym lhs;
 	Sym rhs[MaxRhs];
-	char *action;
+	char *act;
+	int actln;
 };
 
 struct Info {
@@ -982,6 +983,7 @@ getgram()
 				die("too many rules");
 			r = &rs[nrl++];
 			r->lhs = hd;
+			r->act = 0;
 			p = r->rhs;
 			while ((tk=nexttk())==TIdnt || tk==TTokchr) {
 				*p++ = findsy(idnt, 1);
@@ -990,7 +992,8 @@ getgram()
 			}
 			*p = S;
 			if (tk==TLBrack) {
-				r->action = cpycode();
+				r->actln = lineno;
+				r->act = cpycode();
 				tk = nexttk();
 			}
 		} while (tk==TBar);
@@ -1009,44 +1012,6 @@ main()
 
 	getdecls();
 	getgram();
-
-#if 0
-#define NT(n) (MaxTk + n)
-
-	Info infos[] = {
-	/* Tokens */
-	[0]     = { .name = "$" },
-	[1]     = { .name = "Num" },
-	[2]     = { .name = "+" },
-	[3]     = { .name = "-" },
-	[4]     = { .name = "*" },
-	[5]     = { .name = "(" },
-	[6]     = { .name = ")" },
-	/* Non-terminals */
-	[NT(0)] = { .name = "A" },
-	[NT(1)] = { .name = "M" },
-	[NT(2)] = { .name = "B" },
-	[NT(3)] = { .name = "S" },
-	};
-
-	Rule rules[] = {
-	{ NT(0), (Sym[]){ NT(1), S },           "A -> M" },
-	{ NT(0), (Sym[]){ NT(0), 2, NT(1), S }, "A -> A + M" },
-	{ NT(0), (Sym[]){ NT(0), 3, NT(1), S }, "A -> A - M" },
-	{ NT(1), (Sym[]){ NT(2), S },           "M -> B" },
-	{ NT(1), (Sym[]){ NT(1), 4, NT(2), S }, "M -> M * B" },
-	{ NT(2), (Sym[]){ 1, S },               "B -> Num" },
-	{ NT(2), (Sym[]){ 5, NT(0), 6, S },     "B -> ( A )" },
-	{ NT(3), (Sym[]){ NT(0), 0, S },        "S -> A $" },
-	};
-
-	ntk = 7;
-	nsy = sizeof infos / sizeof infos[0];
-	nrl = sizeof rules / sizeof rules[0];
-	is = infos;
-	rs = rules;
-#endif
-
 	ginit();
 	for (Info *i=&is[MaxTk]; i-is<nsy; i++) {
 		printf("Symbol %s\n", i->name);
@@ -1064,6 +1029,5 @@ main()
 	tblgen();
 	actgen();
 	tblout();
-
 	exit(0);
 }
