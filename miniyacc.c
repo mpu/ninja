@@ -19,14 +19,16 @@ typedef struct Row Row;
 #define Red(n) (- (n+2)) /* involutive, Red(Red(x)) == x */
 
 enum {
-	IdntSz = 128,
-	MaxTks = 512,
-	MaxNts = 512,
+	IdntSz = 64,
+	MaxRhs = 32,
+	MaxTk = 500,
+	MaxNt = 500,
+	MaxRl = 1000,
 };
 
 struct Rule {
 	Sym lhs;
-	Sym *rhs;
+	Sym rhs[MaxRhs];
 	char *action;
 };
 
@@ -79,14 +81,18 @@ int *act;
 int *chk;
 int *adsp;
 int *gdsp;
-
 Sym sstart;
 char *utype;
+
+int lineno = 1;
+char *fins;
+FILE *fin;
+FILE *fout;
 
 void
 die(char *s)
 {
-	fprintf(stderr, "%s\n", s);
+	fprintf(stderr, "%s (on line %d)\n", s, lineno);
 	exit(1);
 }
 
@@ -205,7 +211,7 @@ ginit()
 	Info *i;
 	Sym *s;
 
-	for (i=&is[ntk]; i-is<nsy; i++)
+	for (i=&is[MaxTk]; i-is<nsy; i++)
 		i->fst = salloc(0);
 	do {
 		chg = 0;
@@ -274,7 +280,8 @@ again:
 		if (s < ntk || s == S)
 			continue;
 		r = rfind(s);
-		assert(r);
+		if (!r)
+			die("some non-terminals are not defined");
 		l = t->look;
 		assert(*l!=S);
 		do {
@@ -480,7 +487,7 @@ tblgen()
 	for (n=0; n<nst; n++)
 		st[n]->id = n+1;
 	as = yalloc(nst, sizeof as[0]);
-	gs = yalloc(nsy-ntk, sizeof gs[0]);
+	gs = yalloc(nsy-MaxTk, sizeof gs[0]);
 	/* fill action table */
 	for (n=0; n<nst; n++) {
 		r = &as[n];
@@ -491,8 +498,8 @@ tblgen()
 		r->def = Red(r->def); /* Red(-1) == -1 */
 	}
 	/* fill goto table */
-	for (n=ntk; n<nsy; n++) {
-		r = &gs[n-ntk];
+	for (n=MaxTk; n<nsy; n++) {
+		r = &gs[n-MaxTk];
 		r->t = yalloc(nst, sizeof r->t[0]);
 		for (m=0; m<nst; m++)
 			if (st[m]->gtbl[n])
@@ -550,7 +557,7 @@ actgen()
 			}
 	}
 	/* fill in gotos */
-	nnt = nsy-ntk;
+	nnt = nsy-MaxTk;
 	gdsp = yalloc(nnt, sizeof gdsp[0]);
 	for (n=0; n<nnt; n++)
 		o[n] = &gs[n];
@@ -576,7 +583,7 @@ actgen()
 			}
 	}
 	free(o);
-	n = nst*nsy;
+	n = nst*(nsy-MaxTk + ntk);
 	printf("\nOptimizer report\n");
 	printf("  Tables size: %d\n", n);
 	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
@@ -587,15 +594,15 @@ aout(char *name, int *t, int n)
 {
 	int i;
 
-	printf("short %s[] = {", name);
+	fprintf(fout, "short %s[] = {", name);
 	for (i=0; i<n; i++) {
 		if (i % 10 == 0)
-			printf("\n");
-		printf("%4d", t[i]);
+			fprintf(fout, "\n");
+		fprintf(fout, "%4d", t[i]);
 		if (i == n-1)
-			printf("\n};\n");
+			fprintf(fout, "\n};\n");
 		else
-			printf(", ");
+			fprintf(fout, ",");
 	}
 }
 
@@ -610,20 +617,20 @@ tblout()
 		o[n] = smem(rs[n].rhs, S);
 	aout("yyr1", o, nrl);
 	for (n=0; n<nrl; n++)
-		o[n] = rs[n].lhs-ntk;
+		o[n] = rs[n].lhs-MaxTk;
 	aout("yyr2", o, nrl);
 	for (n=0; n<nst; n++)
 		o[n] = as[n].def;
 	aout("yyadef", o, nst);
-	for (n=0; n<nsy-ntk; n++) {
+	for (n=0; n<nsy-MaxTk; n++) {
 		o[n] = gs[n].def;
 		assert(o[n]>0 || o[n]==-1);
 		if (o[n]>0)
 			o[n]--;
 	}
-	aout("yygdef", o, nsy-ntk);
+	aout("yygdef", o, nsy-MaxTk);
 	aout("yyadsp", adsp, nst);
-	aout("yygdsp", gdsp, nsy-ntk);
+	aout("yygdsp", gdsp, nsy-MaxTk);
 	for (n=0; n<actsz; n++)
 		if (act[n]>=0) {
 			assert(act[n]!=0);
@@ -662,6 +669,7 @@ dumpitem(Item *i)
 
 enum {
 	TIdnt,
+	TTokchr, /* 'c' */
 	TPP, /* %% */
 	TLL, /* %{ */
 	TLangle, /* < */
@@ -685,6 +693,7 @@ struct {
 	char *name;
 	int tok;
 } words[] = {
+	{ "%%", TPP },
 	{ "%union", TUnion },
 	{ "%type", TType },
 	{ "%token", TToken },
@@ -696,12 +705,7 @@ struct {
 	{ 0, 0 }
 };
 
-int lnno = 1;
 char idnt[IdntSz];
-
-char *fins;
-FILE *fin;
-FILE *fout;
 
 int
 istok(int c)
@@ -717,7 +721,7 @@ nexttk()
 
 	while (isspace(c=fgetc(fin)))
 		if (c == '\n')
-			lnno++;
+			lineno++;
 	switch (c) {
 	case '<':
 		return TLangle;
@@ -733,6 +737,14 @@ nexttk()
 		return TLBrack;
 	case EOF:
 		return TEof;
+	case '\'':
+		idnt[0] = '\'';
+		idnt[1] = fgetc(fin);
+		idnt[2] = '\'';
+		idnt[3] = 0;
+		if (fgetc(fin)!='\'')
+			die("syntax error, invalid char token");
+		return TTokchr;
 	}
 	p = idnt;
 	while (istok(c)) {
@@ -742,13 +754,9 @@ nexttk()
 		c = fgetc(fin);
 	}
 	*p = 0;
-	if (strcmp(idnt, "%") == 0)
-	switch (c) {
-	case '%':
-		return TPP;
-	case '{':
+	if (strcmp(idnt, "%")==0)
+	if (c=='{')
 		return TLL;
-	}
 	ungetc(c, fin);
 	for (n=0; words[n].name; n++)
 		if (strcmp(idnt, words[n].name) == 0)
@@ -777,7 +785,7 @@ cpycode()
 		if (c == EOF)
 			die("syntax error, unclosed code block");
 		if (c == '\n')
-			lnno++;
+			lineno++;
 		s[pos++] = c;
 		if (pos>=len)
 		if (!(s=realloc(s, 2*len+1)))
@@ -806,15 +814,47 @@ gettype(char *type)
 	}
 }
 
+Sym
+findsy(char *name, int add)
+{
+	int n;
+
+	for (n=0; n<nsy; n++) {
+		if (n == ntk) {
+			if (name[0]=='\'') {
+				if (ntk>=MaxTk)
+					die("too many tokens");
+				ntk++;
+				strcpy(is[n].name, name);
+				return n;
+			}
+			n = MaxTk;
+		}
+		if (strcmp(is[n].name, name)==0)
+			return n;
+	}
+	if (add) {
+		if (nsy>=MaxTk+MaxNt)
+			die("too many non-terminals");
+		strcpy(is[nsy].name, name);
+		return nsy++;
+	} else
+		return nsy;
+}
+
 void
 getdecls()
 {
 	int tk, prec, p, a, c, c1, n;
 	Info *si;
-	char type[IdntSz], start[IdntSz];
+	char type[IdntSz];
 
+	is = yalloc(MaxTk+MaxNt, sizeof is[0]);
+	strcpy(is[0].name, "$");
+	ntk = 1;
+	nsy = MaxTk;
+	sstart = S;
 	prec = 0;
-	is = yalloc(MaxTks+MaxNts, sizeof is[0]);
 	tk = nexttk();
 	for (;;)
 		switch (tk) {
@@ -822,7 +862,9 @@ getdecls()
 			tk = nexttk();
 			if (tk!=TIdnt)
 				die("syntax error, ident expected after %start");
-			strcpy(start, idnt);
+			sstart = findsy(idnt, 1);
+			if (sstart<ntk)
+				die("%start cannot specify a token");
 			tk = nexttk();
 			break;
 		case TUnion:
@@ -849,15 +891,15 @@ getdecls()
 			a = ANone;
 		addtoks:
 			tk = gettype(type);
-			while (tk==TIdnt) {
+			while (tk==TIdnt || tk==TTokchr) {
 				si = 0;
-				for (n=0; n<ntk; n++)
-					if (strcmp(idnt, is[n].name)==0)
-						break;
-				if (n==ntk) {
-					ntk++;
-					if (ntk>=MaxTks)
+				n = findsy(idnt, 0);
+				if (n>=MaxTk && n<nsy)
+					die("non-terminal redeclared as token");
+				if (n==nsy) {
+					if (ntk>=MaxTk)
 						die("too many tokens");
+					n = ntk++;
 				}
 				si = &is[n];
 				strcpy(si->name, idnt);
@@ -871,9 +913,22 @@ getdecls()
 			tk = gettype(type);
 			if (type[0]==0)
 				die("syntax error, type expected");
+			while (tk==TIdnt) {
+				si = 0;
+				n = findsy(idnt, 1);
+				if (n<ntk)
+					die("token redeclared as non-terminal");
+				if (n==nsy) {
+					nsy++;
+				}
+				si = &is[n];
+				strcpy(si->name, idnt);
+				strcpy(si->type, idnt);
+				tk = nexttk();
+			}
 			break;
 		case TLL:
-			fprintf(fout, "#line %d \"%s\"\n", lnno, fins);
+			fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
 			for (;;) {
 				c = fgetc(fin);
 				if (c == EOF)
@@ -887,18 +942,61 @@ getdecls()
 					ungetc(c1, fin);
 				}
 				if (c == '\n')
-					lnno++;
+					lineno++;
 				fputc(c, fout);
 			}
 			tk = nexttk();
 			break;
 		case TPP:
-			goto finalize;
+			return;
 		case TEof:
 			die("syntax error, unfinished declarations");
+		default:
+			die("syntax error, declaration expected");
 		}
-finalize:
-	;
+}
+
+void
+getgram()
+{
+	int tk;
+	Sym hd, *p;
+	Rule *r;
+
+	rs = yalloc(MaxRl, sizeof rs[0]);
+	for (;;) {
+		tk = nexttk();
+		if (tk==TPP || tk==TEof) {
+			qsort(rs, nrl, sizeof rs[0], rcmp);
+			return;
+		}
+		if (tk!=TIdnt)
+			die("syntax error, production rule expected");
+		if (nexttk()!=TColon)
+			die("syntax error, colon expected after production's head");
+		hd = findsy(idnt, 1);
+		if (sstart==S)
+			sstart = hd;
+		do {
+			if (nrl>=MaxRl)
+				die("too many rules");
+			r = &rs[nrl++];
+			r->lhs = hd;
+			p = r->rhs;
+			while ((tk=nexttk())==TIdnt || tk==TTokchr) {
+				*p++ = findsy(idnt, 1);
+				if (p-r->rhs >= MaxRhs-1)
+					die("production rule too long");
+			}
+			*p = S;
+			if (tk==TLBrack) {
+				r->action = cpycode();
+				tk = nexttk();
+			}
+		} while (tk==TBar);
+		if (tk!=TSemi)
+			die("syntax error, ; or : expected");
+	}
 }
 
 int
@@ -906,13 +1004,14 @@ main()
 {
 
 	fin = stdin;
-	fins = "<stdin>";
+	fins = "foo.y";
 	fout = stdout;
+
 	getdecls();
+	getgram();
 
 #if 0
-#define NTOKS 7
-#define NT(n) (NTOKS + n)
+#define NT(n) (MaxTk + n)
 
 	Info infos[] = {
 	/* Tokens */
@@ -941,14 +1040,15 @@ main()
 	{ NT(3), (Sym[]){ NT(0), 0, S },        "S -> A $" },
 	};
 
-	ntk = NTOKS;
+	ntk = 7;
 	nsy = sizeof infos / sizeof infos[0];
 	nrl = sizeof rules / sizeof rules[0];
 	is = infos;
 	rs = rules;
+#endif
 
 	ginit();
-	for (Info *i=&is[ntk]; i-is<nsy; i++) {
+	for (Info *i=&is[MaxTk]; i-is<nsy; i++) {
 		printf("Symbol %s\n", i->name);
 		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
 		printf("  First:   ");
@@ -956,7 +1056,7 @@ main()
 			printf(" %s", is[*s].name);
 		printf("\n");
 	}
-	stgen(NT(3));
+	stgen(sstart);
 	for (int n=0; n<nst; n++) {
 		printf("\nState %d:\n", n);
 		dumpitem(st[n]);
@@ -964,7 +1064,6 @@ main()
 	tblgen();
 	actgen();
 	tblout();
-#endif
 
 	exit(0);
 }
