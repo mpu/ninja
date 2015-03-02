@@ -1,4 +1,4 @@
-/*% cc -g -std=c99 -Wall -Wextra % -o #
+/*% clang -g -std=c99 -Wall -Wextra % -o #
  * miniyacc - port of ninja.ml, LALR(1) grammars.
  */
 #include <assert.h>
@@ -430,7 +430,8 @@ tblset(int *tbl, Item *i, Term *t)
 		assert(i->gtbl[s]);
 		if (tbl[s] && tbl[s] != i->gtbl[s]->id) {
 			assert(tbl[s] < 0);
-			printf(srs, i->id-1, is[s].name);
+			if (fgrm)
+				fprintf(fgrm, srs, i->id-1, is[s].name);
 			srconf++;
 		}
 		tbl[s] = i->gtbl[s]->id;
@@ -439,10 +440,12 @@ tblset(int *tbl, Item *i, Term *t)
 		for (l=t->look; (s=*l)!=S; l++) {
 			/* default to shift if conflict occurs */
 			if (tbl[s]<0) {
-				printf(rrs, i->id-1, is[s].name);
+				if (fgrm)
+					fprintf(fgrm, rrs, i->id-1, is[s].name);
 				rrconf++;
 			} else if (tbl[s]>0) {
-				printf(srs, i->id-1, is[s].name);
+				if (fgrm)
+					fprintf(fgrm, srs, i->id-1, is[s].name);
 				srconf++;
 			} else
 				tbl[s] = Red(t->rule-rs);
@@ -588,12 +591,12 @@ actgen()
 			}
 	}
 	free(o);
-	/*
-	n = nst*(nsy-MaxTk + ntk);
-	printf("\nOptimizer report\n");
-	printf("  Tables size: %d\n", n);
-	printf("  Space savings: %.2g\n", (float)(n-actsz)/n);
-	*/
+	if (fgrm) {
+		n = nst*(nsy-MaxTk + ntk);
+		fprintf(fgrm, "\nOptimizer report\n");
+		fprintf(fgrm, "  Tables size: %d\n", n);
+		fprintf(fgrm, "  Space savings: %.2g\n", (float)(n-actsz)/n);
+	}
 }
 
 void
@@ -659,31 +662,33 @@ stdump()
 	Rule *r;
 	Info *i;
 
+	if (!fgrm)
+		return;
 	for (i=&is[MaxTk]; i-is<nsy; i++) {
-		printf("Symbol %s\n", i->name);
-		printf("  Nullable: %s\n", i->nul ? "yes" : "no");
-		printf("  First:   ");
+		fprintf(fgrm, "\nSymbol %s\n", i->name);
+		fprintf(fgrm, "  Nullable: %s\n", i->nul ? "yes" : "no");
+		fprintf(fgrm, "  First:   ");
 		for (s=i->fst; *s!=S; s++)
-			printf(" %s", is[*s].name);
-		printf("\n");
+			fprintf(fgrm, " %s", is[*s].name);
 	}
+	fprintf(fgrm, "\n");
 	for (n=0; n<nst; n++) {
-		printf("\nState %d:\n", n);
+		fprintf(fgrm, "\nState %d:\n", n);
 		for (t=st[n]->ts; t-st[n]->ts<st[n]->nt; t++) {
 			n = 0;
 			r = t->rule;
 			d = t->dot;
-			n += printf("  %s ->", is[r->lhs].name);
+			n += fprintf(fgrm, "  %s ->", is[r->lhs].name);
 			for (s=r->rhs; *s!=S; s++, d--)
-				n += printf(" %s%s", d ? "" : ". ", is[*s].name);
+				n += fprintf(fgrm, " %s%s", d ? "" : ". ", is[*s].name);
 			if (!d)
-				n += printf(" .");
-			while (n++<30)
-				putchar(' ');
-			printf(" [");
+				n += fprintf(fgrm, " .");
+			while (n++<50)
+				fputc(' ', fgrm);
+			fprintf(fgrm, " [");
 			for (s=t->look; *s!=S; s++)
-				printf(" %s", is[*s].name);
-			printf(" ]\n");
+				fprintf(fgrm, " %s", is[*s].name);
+			fprintf(fgrm, " ]\n");
 		}
 	}
 }
@@ -1081,7 +1086,7 @@ actout(Rule *r)
 			if (c == '$') {
 				fprintf(fout, "yyval.%s", ty);
 			} else {
-				if (!isdigit(*p++)) {
+				if (!isdigit(c)) {
 					lineno = i;
 					die("number or $ expected afer tag field");
 				}
@@ -1135,23 +1140,56 @@ codeout()
 		fputc(c, fout);
 }
 
+void
+init(int ac, char *av[])
+{
+	int vflag;
+	char buf[100];
+	char *f, *p;
+
+	if (ac<2)
+		die("no input file");
+	vflag = 0;
+	f = av[1];
+	if (strcmp(f, "-v")==0) {
+		if (ac<3)
+			die("no input file");
+		f = av[2];
+		vflag = 1;
+	}
+	fin = fopen(f, "r");
+	p = strrchr(f, '.');
+	if (p)
+		*p = 0;
+	snprintf(buf, sizeof buf, "%s.tab.c", f);
+	fout = fopen(buf, "w");
+	snprintf(buf, sizeof buf, "%s.grm", f);
+	if (vflag)
+		fgrm = fopen(buf, "w");
+	if (!fin || !fout)
+		die("cannot open work files");
+}
+
 int
-main()
+main(int ac, char *av[])
 {
 
-	fin = stdin;
-	fins = "foo.y";
-	fout = stdout;
-
+	init(ac, av);
 	getdecls();
 	getgram();
 	ginit();
-	stgen(sstart);
-	//stdump();
+	stgen();
+	stdump();
 	tblgen();
 	actgen();
 	tblout();
 	codeout();
+
+	if (srconf)
+		fprintf(stderr, "%d shift/reduce conflicts\n", srconf);
+	if (rrconf)
+		fprintf(stderr, "%d reduce/reduce conflicts\n", rrconf);
+
 	exit(0);
 }
 
