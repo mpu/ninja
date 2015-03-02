@@ -680,8 +680,7 @@ tblout()
 	aout("yygdsp", gdsp, nsy-MaxTk);
 	for (n=0; n<actsz; n++)
 		if (act[n]>=0) {
-			if (act[n]==0)
-				fprintf(stderr, "action burp! %d\n", n);
+			/* assert(act[n]!=0); I think, this is wrong. */
 			act[n]--;
 		}
 	aout("yyact", act, actsz);
