@@ -1,10 +1,5 @@
 /*% cc -Wall -g -o # %
  */
-#define YYSTYPE int
-
-YYSTYPE yylval, yyval;
-int lex(void);
-
 short yyntoks = 7;
 short yyr1[] = {
    1,    3,    3,    1,    3,    1,    3,    2
@@ -34,6 +29,11 @@ short yychk[] = {
    2,    3,    7,    0,    6,    2,    3,    1,    4,    8,
    8,    5,    9
 };
+
+#define YYSTYPE int
+
+YYSTYPE yylval, yyval;
+int lex(void);
 
 int
 yyparse()
