@@ -2,6 +2,7 @@
  * miniyacc - port of ninja.ml, LALR(1) grammars.
  */
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,12 @@ typedef struct Row Row;
 #define NulItem (Item){0,0,0,0}
 #define Red(n) (- (n+2)) /* involutive, Red(Red(x)) == x */
 
+enum {
+	IdntSz = 128,
+	MaxTks = 512,
+	MaxNts = 512,
+};
+
 struct Rule {
 	Sym lhs;
 	Sym *rhs;
@@ -24,9 +31,17 @@ struct Rule {
 };
 
 struct Info {
-	char *name;
 	int nul;
 	Sym *fst;
+	int prec;
+	enum {
+		ALeft,
+		ARight,
+		ANonassoc,
+		ANone
+	} assoc;
+	char name[IdntSz];
+	char type[IdntSz];
 };
 
 struct Term {
@@ -64,6 +79,9 @@ int *act;
 int *chk;
 int *adsp;
 int *gdsp;
+
+Sym sstart;
+char *utype;
 
 void
 die(char *s)
@@ -394,11 +412,11 @@ tblset(int *tbl, Item *i, Term *t)
 
 	s = t->rule->rhs[t->dot];
 	if (s!=S) {
-		/* shift/goto */
+		/* shift */
 		if (s>=ntk)
 			return;
 		assert(i->gtbl[s]);
-		if (tbl[s] && s<ntk && tbl[s] != i->gtbl[s]->id) {
+		if (tbl[s] && tbl[s] != i->gtbl[s]->id) {
 			assert(tbl[s] < 0);
 			printf(srs, i->id, is[s].name);
 			srconf++;
@@ -642,10 +660,257 @@ dumpitem(Item *i)
 	}
 }
 
+enum {
+	TIdnt,
+	TPP, /* %% */
+	TLL, /* %{ */
+	TLangle, /* < */
+	TRangle, /* > */
+	TSemi, /* ; */
+	TBar, /* | */
+	TColon, /* : */
+	TLBrack, /* { */
+	TUnion,
+	TType,
+	TToken,
+	TRight,
+	TLeft,
+	TNonassoc,
+	TPrec,
+	TStart,
+	TEof,
+};
+
+struct {
+	char *name;
+	int tok;
+} words[] = {
+	{ "%union", TUnion },
+	{ "%type", TType },
+	{ "%token", TToken },
+	{ "%right", TRight },
+	{ "%left", TLeft },
+	{ "%nonassoc", TNonassoc },
+	{ "%prec", TPrec },
+	{ "%start", TStart },
+	{ 0, 0 }
+};
+
+int lnno = 1;
+char idnt[IdntSz];
+
+char *fins;
+FILE *fin;
+FILE *fout;
+
+int
+istok(int c)
+{
+	return isalnum(c) || c=='_' || c=='%';
+}
+
+int
+nexttk()
+{
+	int n;
+	char c, *p;
+
+	while (isspace(c=fgetc(fin)))
+		if (c == '\n')
+			lnno++;
+	switch (c) {
+	case '<':
+		return TLangle;
+	case '>':
+		return TRangle;
+	case ';':
+		return TSemi;
+	case '|':
+		return TBar;
+	case ':':
+		return TColon;
+	case '{':
+		return TLBrack;
+	case EOF:
+		return TEof;
+	}
+	p = idnt;
+	while (istok(c)) {
+		*p++ = c;
+		if (p-idnt >= IdntSz-1)
+			die("identifier too long");
+		c = fgetc(fin);
+	}
+	*p = 0;
+	if (strcmp(idnt, "%") == 0)
+	switch (c) {
+	case '%':
+		return TPP;
+	case '{':
+		return TLL;
+	}
+	ungetc(c, fin);
+	for (n=0; words[n].name; n++)
+		if (strcmp(idnt, words[n].name) == 0)
+			return words[n].tok;
+	return TIdnt;
+}
+
+char *
+cpycode()
+{
+	int c, nest, len, pos;
+	char *s;
+
+	len = 64;
+	s = yalloc(len+1, 1);
+	s[0] = '{';
+	pos = 1;
+	nest = 1;
+
+	while (nest) {
+		c = fgetc(fin);
+		if (c == '{')
+			nest++;
+		if (c == '}')
+			nest--;
+		if (c == EOF)
+			die("syntax error, unclosed code block");
+		if (c == '\n')
+			lnno++;
+		s[pos++] = c;
+		if (pos>=len)
+		if (!(s=realloc(s, 2*len+1)))
+			die("out of memory");
+	}
+	s[pos] = 0;
+	return s;
+}
+
+int
+gettype(char *type)
+{
+	int tk;
+
+	tk = nexttk();
+	if (tk==TLangle) {
+		if (nexttk()!=TIdnt)
+			die("syntax error, ident expected after <");
+		strcpy(type, idnt);
+		if (nexttk()!=TRangle)
+			die("syntax error, unclosed <");
+		return nexttk();
+	} else {
+		type[0] = 0;
+		return tk;
+	}
+}
+
+void
+getdecls()
+{
+	int tk, prec, p, a, c, c1, n;
+	Info *si;
+	char type[IdntSz], start[IdntSz];
+
+	prec = 0;
+	is = yalloc(MaxTks+MaxNts, sizeof is[0]);
+	tk = nexttk();
+	for (;;)
+		switch (tk) {
+		case TStart:
+			tk = nexttk();
+			if (tk!=TIdnt)
+				die("syntax error, ident expected after %start");
+			strcpy(start, idnt);
+			tk = nexttk();
+			break;
+		case TUnion:
+			tk = nexttk();
+			if (tk!=TLBrack)
+				die("syntax error, { expected after %union");
+			utype = cpycode();
+			tk = nexttk();
+			break;
+		case TLeft:
+			p = prec++;
+			a = ALeft;
+			goto addtoks;
+		case TRight:
+			p = prec++;
+			a = ARight;
+			goto addtoks;
+		case TNonassoc:
+			p = prec++;
+			a = ANonassoc;
+			goto addtoks;
+		case TToken:
+			p = -1;
+			a = ANone;
+		addtoks:
+			tk = gettype(type);
+			while (tk==TIdnt) {
+				si = 0;
+				for (n=0; n<ntk; n++)
+					if (strcmp(idnt, is[n].name)==0)
+						break;
+				if (n==ntk) {
+					ntk++;
+					if (ntk>=MaxTks)
+						die("too many tokens");
+				}
+				si = &is[n];
+				strcpy(si->name, idnt);
+				strcpy(si->type, type);
+				si->prec = p;
+				si->assoc = a;
+				tk = nexttk();
+			}
+			break;
+		case TType:
+			tk = gettype(type);
+			if (type[0]==0)
+				die("syntax error, type expected");
+			break;
+		case TLL:
+			fprintf(fout, "#line %d \"%s\"\n", lnno, fins);
+			for (;;) {
+				c = fgetc(fin);
+				if (c == EOF)
+					die("syntax error, unclosed %{");
+				if (c == '%') {
+					c1 = fgetc(fin);
+					if (c1 == '}') {
+						fputs("\n", fout);
+						break;
+					}
+					ungetc(c1, fin);
+				}
+				if (c == '\n')
+					lnno++;
+				fputc(c, fout);
+			}
+			tk = nexttk();
+			break;
+		case TPP:
+			goto finalize;
+		case TEof:
+			die("syntax error, unfinished declarations");
+		}
+finalize:
+	;
+}
+
 int
 main()
 {
 
+	fin = stdin;
+	fins = "<stdin>";
+	fout = stdout;
+	getdecls();
+
+#if 0
 #define NTOKS 7
 #define NT(n) (NTOKS + n)
 
@@ -699,6 +964,7 @@ main()
 	tblgen();
 	actgen();
 	tblout();
+#endif
 
 	exit(0);
 }
