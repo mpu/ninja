@@ -33,6 +33,7 @@ struct Rule {
 	Sym rhs[MaxRhs];
 	char *act;
 	int actln;
+	int prec;
 };
 
 struct Info {
@@ -40,10 +41,10 @@ struct Info {
 	Sym *fst;
 	int prec;
 	enum {
+		ANone,
 		ALeft,
 		ARight,
 		ANonassoc,
-		ANone
 	} assoc;
 	char name[IdntSz];
 	char type[IdntSz];
@@ -417,9 +418,31 @@ stgen()
 	}
 }
 
+int
+resolve(Rule *r, Sym s, int st)
+{
+	if (!r->prec || !is[s].prec) {
+	conflict:
+		if (fgrm)
+			fprintf(fgrm, srs, st, is[s].name);
+		srconf++;
+		return ARight;
+	}
+	if (r->prec==is[s].prec) {
+		if (is[s].assoc == ANone)
+			goto conflict;
+		return is[s].assoc;
+	} else
+		if (r->prec<is[s].prec)
+			return ARight;
+		else
+			return ALeft;
+}
+
 void
 tblset(int *tbl, Item *i, Term *t)
 {
+	int act;
 	Sym s, *l;
 
 	s = t->rule->rhs[t->dot];
@@ -428,27 +451,40 @@ tblset(int *tbl, Item *i, Term *t)
 		if (s>=ntk)
 			return;
 		assert(i->gtbl[s]);
+		act = ARight;
 		if (tbl[s] && tbl[s] != i->gtbl[s]->id) {
-			assert(tbl[s] < 0);
-			if (fgrm)
-				fprintf(fgrm, srs, i->id-1, is[s].name);
-			srconf++;
+			assert(tbl[s]<=0);
+			act = resolve(&rs[Red(tbl[s])], s, i->id-1);
 		}
-		tbl[s] = i->gtbl[s]->id;
+		switch (act) {
+		case ARight:
+			tbl[s] = i->gtbl[s]->id;
+			break;
+		case ANone:
+			tbl[s] = -1;
+			break;
+		}
 	} else
 		/* reduce */
 		for (l=t->look; (s=*l)!=S; l++) {
 			/* default to shift if conflict occurs */
-			if (tbl[s]<0) {
+			if (!tbl[s])
+				act = ALeft;
+			else if (tbl[s]<0) {
 				if (fgrm)
 					fprintf(fgrm, rrs, i->id-1, is[s].name);
 				rrconf++;
-			} else if (tbl[s]>0) {
-				if (fgrm)
-					fprintf(fgrm, srs, i->id-1, is[s].name);
-				srconf++;
+				act = ARight;
 			} else
+				act = resolve(t->rule, s, i->id-1);
+			switch (act) {
+			case ALeft:
 				tbl[s] = Red(t->rule-rs);
+				break;
+			case ANone:
+				tbl[s] = -1;
+				break;
+			}
 		}
 }
 
@@ -906,19 +942,19 @@ getdecls()
 		tk = nexttk();
 		break;
 	case TLeft:
-		p = prec++;
+		p = ++prec;
 		a = ALeft;
 		goto addtoks;
 	case TRight:
-		p = prec++;
+		p = ++prec;
 		a = ARight;
 		goto addtoks;
 	case TNonassoc:
-		p = prec++;
+		p = ++prec;
 		a = ANonassoc;
 		goto addtoks;
 	case TToken:
-		p = -1;
+		p = 0;
 		a = ANone;
 	addtoks:
 		tk = gettype(type);
@@ -994,7 +1030,7 @@ getgram()
 {
 	extern char *retcode;
 	int tk;
-	Sym hd, *p;
+	Sym hd, *p, s;
 	Rule *r;
 
 	for (;;) {
@@ -1025,8 +1061,19 @@ getgram()
 			r->lhs = hd;
 			r->act = 0;
 			p = r->rhs;
-			while ((tk=nexttk())==TIdnt || tk==TTokchr) {
-				*p++ = findsy(idnt, 1);
+			while ((tk=nexttk())==TIdnt || tk==TTokchr || tk==TPrec) {
+				if (tk==TPrec) {
+					tk = nexttk();
+					if (tk!=TIdnt
+					|| (s=findsy(idnt, 0))>=ntk)
+						die("token expected after %prec");
+					r->prec = is[s].prec;
+					continue;
+				}
+				s = findsy(idnt, 1);
+				*p++ = s;
+				if (s<ntk && is[s].prec>0)
+					r->prec = is[s].prec;
 				if (p-r->rhs >= MaxRhs-1)
 					die("production rule too long");
 			}
