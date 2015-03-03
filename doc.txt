@@ -54,7 +54,7 @@ symbols.
 ++ About reduces
 
 Even though it is fairly obvious that in a
-single state their can bit shifts towards
+single state their can be shifts towards
 different states.  It is also true that,
 depending on the lookahead, their can be
 multiple reduces.  For an example, consider
