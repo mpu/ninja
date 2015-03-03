@@ -863,10 +863,10 @@ cpycode()
 			die("syntax error, unclosed code block");
 		if (c == '\n')
 			lineno++;
-		s[pos++] = c;
 		if (pos>=len)
-		if (!(s=realloc(s, 2*len+1)))
+		if (!(s=realloc(s, len=2*len+1)))
 			die("out of memory");
+		s[pos++] = c;
 	}
 	s[pos] = 0;
 	return s;
