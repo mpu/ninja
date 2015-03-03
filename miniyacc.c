@@ -655,7 +655,7 @@ aout(char *name, int *t, int n)
 void
 tblout()
 {
-	int *o, n;
+	int *o, n, m;
 
 	fprintf(fout, "short yyini = %d;\n", ini->id-1);
 	fprintf(fout, "short yyntoks = %d;\n", ntk);
@@ -685,6 +685,21 @@ tblout()
 		}
 	aout("yyact", act, actsz);
 	aout("yychk", chk, actsz);
+	for (n=0; n<128; n++) {
+		o[n] = 0;
+		for (m=0; m<ntk; m++)
+			if (is[m].name[0]=='\'')
+			if (is[m].name[1]==n)
+				assert(!o[n]), o[n] = m;
+	}
+	m = 128;
+	for (n=1; n<ntk; n++) {
+		if (is[n].name[0]=='\'')
+			continue;
+		fprintf(fout, "#define %s %d\n", is[n].name, m);
+		o[m++] = n;
+	}
+	aout("yytrns", o, m);
 	free(o);
 }
 
@@ -1273,7 +1288,7 @@ char *code0[] = {
 "	tk = -1;\n",
 "loop:\n",
 "	if (tk <= 0) {\n",
-"		tk = lex();\n",
+"		tk = yytrns[yylex()];\n",
 "		vl = yylval;\n",
 "	}\n",
 "	n = yyadsp[s] + tk;\n",
