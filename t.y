@@ -43,17 +43,24 @@ enum {
 char line[MaxLine], *p;
 
 int
-lex()
+yyerror()
+{
+	puts("oops");
+}
+
+int
+yylex()
 {
 	char c;
 
 	p += strspn(p, "\t ");
 	switch ((c=*p++)) {
-	case '+': return 2;
-	case '-': return 3;
-	case '*': return 4;
-	case '(': return 5;
-	case ')': return 6;
+	case '+':
+	case '-':
+	case '*':
+	case '(':
+	case ')':
+		return c;
 	case 0:
 	case '\n':
 		p--;
@@ -61,7 +68,7 @@ lex()
 	}
 	if (isdigit(c)) {
 		yylval.num = strtol(p-1, &p, 0);
-		return 1;
+		return NUM;
 	}
 	puts("lex error!");
 	return 0;
