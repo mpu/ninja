@@ -293,16 +293,16 @@ iclose(Item *i)
 void
 igoto(Item *i, Sym s)
 {
-	Term *t, t1;
+	Term *t, *t1;
 	int n;
 
 	i0.nt = 0;
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
-		t1 = *t;
-		t1.dot++;
-		i0.ts[i0.nt++] = t1;
+		t1 = &i0.ts[i0.nt++];
+		*t1 = *t;
+		t1->dot++;
 	}
 	qsort(i0.ts, i0.nt, sizeof i0.ts[0], tcmpv);
 }
