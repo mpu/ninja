@@ -274,53 +274,53 @@ iclose(Item *i)
 	Sym s, *rem, l;
 	int chg, n;
 
-	chg = 1;
-	while (chg)
-	for (n=0, t=i->ts, chg=0; n<i->nt; n++, t++) {
-		rem = &t->rule->rhs[t->dot];
-		s = *rem++;
-		if (s < ntk || s == S)
-			continue;
-		r = rfind(s);
-		if (!r)
-			die("some non-terminals are not defined");
-		l = -1;
-		for (;;) {
-			do {
-				if (++l>=ntk) {
-					r++;
-					l = 0;
-				}
-			} while (!GetBit(t->lk.t, l));
-			if (r-rs>=nrl || r->lhs != s)
-				break;
-			t1.rule = r;
-			t1.dot = 0;
-			tszero(&t1.lk);
-			first(&t1.lk, rem, l);
-			chg |= iadd(i, &t1);
+	do {
+		chg = 0;
+		for (n=0, t=i->ts; n<i->nt; n++, t++) {
+			rem = &t->rule->rhs[t->dot];
+			s = *rem++;
+			if (s < ntk || s == S)
+				continue;
+			r = rfind(s);
+			if (!r)
+				die("some non-terminals are not defined");
+			l = -1;
+			for (;;) {
+				do {
+					if (++l>=ntk) {
+						r++;
+						l = 0;
+					}
+				} while (!GetBit(t->lk.t, l));
+				if (r-rs>=nrl || r->lhs != s)
+					break;
+				t1.rule = r;
+				t1.dot = 0;
+				tszero(&t1.lk);
+				first(&t1.lk, rem, l);
+				chg |= iadd(i, &t1);
+			}
 		}
-	}
+	} while (chg);
 }
 
 Item *
 igoto(Item *i, Sym s)
 {
+	static Item i1;
 	Term *t, t1;
-	Item *i1;
 	int n;
 
-	i1 = yalloc(1, sizeof *i1);
-	*i1 = itm0;
+	i1.nt = 0;
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
 		t1 = *t;
 		t1.dot++;
-		iadd(i1, &t1);
+		iadd(&i1, &t1);
 	}
-	qsort(i1->ts, i1->nt, sizeof i1->ts[0], tcmpv);
-	return i1;
+	qsort(i1.ts, i1.nt, sizeof i1.ts[0], tcmpv);
+	return &i1;
 }
 
 int
@@ -370,7 +370,6 @@ stadd(Item **pi)
 		i1 = st[hi];
 		for (n=0; n<i->nt; n++)
 			chg |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
-		free(i);
 		*pi = i1;
 		if (chg)
 			iclose(i1);
@@ -380,8 +379,10 @@ stadd(Item **pi)
 		if (!st)
 			die("out of memory");
 		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
-		st[hi] = i;
-		iclose(i);
+		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
+		st[hi] = yalloc(1, sizeof *i1);
+		*st[hi] = *i;
+		iclose(st[hi]);
 		return 1;
 	}
 }
@@ -391,12 +392,11 @@ stgen()
 {
 	Sym s;
 	Rule *r;
-	Item *start, *i, *i1;
+	Item *i, *i1;
 	Term tini;
 	int n, chg;
 
-	ini = i = yalloc(1, sizeof *start);
-	*i = itm0;
+	ini = i = yalloc(1, sizeof *i);
 	r = rfind(Sym0);
 	assert(r);
 	tini.rule = r;
@@ -406,23 +406,21 @@ stgen()
 	iadd(i, &tini);
 	iclose(i);
 	stadd(&i);
-	chg = 1;
-	while (chg)
-	for (n=0, chg=0; n<nst; n++) {
-		i = st[n];
-		if (!i->gtbl)
-			i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
-		for (s=0; s<nsy; s++) {
-			i1 = igoto(i, s);
-			if (!i1->nt) {
-				free(i1);
-				i->gtbl[s] = 0;
-				continue;
+	do {
+		chg = 0;
+		for (n=0; n<nst; n++) {
+			i = st[n];
+			for (s=0; s<nsy; s++) {
+				i1 = igoto(i, s);
+				if (!i1->nt) {
+					i->gtbl[s] = 0;
+					continue;
+				}
+				chg |= stadd(&i1);
+				i->gtbl[s] = i1;
 			}
-			chg |= stadd(&i1);
-			i->gtbl[s] = i1;
 		}
-	}
+	} while (chg);
 }
 
 int
