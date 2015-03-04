@@ -301,7 +301,6 @@ iclose(Item *i)
 			chg |= iadd(i, &t1);
 		}
 	}
-	qsort(i->ts, i->nt, sizeof i->ts[0], tcmpv);
 }
 
 Item *
@@ -320,19 +319,28 @@ igoto(Item *i, Sym s)
 		t1.dot++;
 		iadd(i1, &t1);
 	}
-	iclose(i1);
+	qsort(i1->ts, i1->nt, sizeof i1->ts[0], tcmpv);
 	return i1;
 }
 
 int
 icmp(Item *a, Item *b)
 {
-	int n, c;
+	Term *ta, *tb, *ma, *mb;
+	int c;
 
-	c = b->nt - a->nt;
-	for (n=0; !c && n<a->nt; n++)
-		c = tcmp(&a->ts[n], &b->ts[n]);
-	return c;
+	ta = a->ts;
+	tb = b->ts;
+	ma = ta+a->nt;
+	mb = tb+b->nt;
+	for (;;) {
+		if (ta==ma || ta->dot==0)
+			return -(tb<mb && tb->dot);
+		if (tb==mb || tb->dot==0)
+			return +(ta<ma && ta->dot);
+		if ((c=tcmp(ta++, tb++)))
+			return c;
+	}
 }
 
 int
@@ -364,6 +372,8 @@ stadd(Item **pi)
 			chg |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
 		free(i);
 		*pi = i1;
+		if (chg)
+			iclose(i1);
 		return chg;
 	} else {
 		st = realloc(st, ++nst * sizeof st[0]);
@@ -371,6 +381,7 @@ stadd(Item **pi)
 			die("out of memory");
 		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
 		st[hi] = i;
+		iclose(i);
 		return 1;
 	}
 }
