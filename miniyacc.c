@@ -80,7 +80,7 @@ struct Row {
 char srs[] = "shift/reduce conflict state %d token %s\n";
 char rrs[] = "reduce/reduce conflict state %d token %s\n";
 
-Item itm0;
+Item i0; /* temporary item */
 
 int nrl, nsy, nst, ntk;
 Rule rs[MaxRl]; /* grammar rules (ordered, rcmp) */
@@ -304,23 +304,21 @@ iclose(Item *i)
 	} while (chg);
 }
 
-Item *
+void
 igoto(Item *i, Sym s)
 {
-	static Item i1;
 	Term *t, t1;
 	int n;
 
-	i1.nt = 0;
+	i0.nt = 0;
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
 		t1 = *t;
 		t1.dot++;
-		iadd(&i1, &t1);
+		iadd(&i0, &t1);
 	}
-	qsort(i1.ts, i1.nt, sizeof i1.ts[0], tcmpv);
-	return &i1;
+	qsort(i0.ts, i0.nt, sizeof i0.ts[0], tcmpv);
 }
 
 int
@@ -396,22 +394,22 @@ stgen()
 	Term tini;
 	int n, chg;
 
-	ini = i = yalloc(1, sizeof *i);
+	ini = &i0;
 	r = rfind(Sym0);
 	assert(r);
 	tini.rule = r;
 	tini.dot = 0;
 	tszero(&tini.lk);
 	SetBit(tini.lk.t, 0);
-	iadd(i, &tini);
-	iclose(i);
-	stadd(&i);
+	iadd(ini, &tini);
+	stadd(&ini);
 	do {
 		chg = 0;
 		for (n=0; n<nst; n++) {
 			i = st[n];
 			for (s=0; s<nsy; s++) {
-				i1 = igoto(i, s);
+				igoto(i, s);
+				i1 = &i0;
 				if (!i1->nt) {
 					i->gtbl[s] = 0;
 					continue;
