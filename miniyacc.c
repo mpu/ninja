@@ -9,6 +9,7 @@
 
 typedef int Sym;
 typedef struct Rule Rule;
+typedef struct TSet TSet;
 typedef struct Info Info;
 typedef struct Term Term;
 typedef struct Item Item;
@@ -17,6 +18,8 @@ typedef struct Row Row;
 #define S ((Sym) -1)
 #define NulItem (Item){0,0,0,0}
 #define Red(n) (- (n+2)) /* involutive, Red(Red(x)) == x */
+#define GetBit(s,n) (s[n/32] & (1<<(n%32)))
+#define SetBit(s,n) (s[n/32] |= 1<<(n%32))
 
 enum {
 	IdntSz = 64,
@@ -25,7 +28,8 @@ enum {
 	MaxNt = 500,
 	MaxRl = 1000,
 
-	Start = MaxTk,
+	TSetSz = (MaxTk+31)/32,
+	Sym0 = MaxTk,
 };
 
 struct Rule {
@@ -36,9 +40,13 @@ struct Rule {
 	int prec;
 };
 
+struct TSet {
+	unsigned t[TSetSz];
+};
+
 struct Info {
 	int nul;
-	Sym *fst;
+	TSet fst;
 	int prec;
 	enum {
 		ANone,
@@ -53,7 +61,7 @@ struct Info {
 struct Term {
 	Rule *rule;
 	int dot;
-	Sym *look;
+	TSet lk;
 };
 
 struct Item {
@@ -144,71 +152,58 @@ salloc(int n)
 }
 
 int
-smem(Sym *l, Sym s)
+slen(Sym *l)
 {
 	int n;
 
-	for (n=0; *l!=s && *l!=S; n++, l++);
+	for (n=0; *l!=S; n++, l++);
 	return n;
 }
 
-int
-sunion(Sym **pa, Sym *b)
+void
+tszero(TSet *ts)
 {
-	Sym *l, *p, *a;
-	int ch;
-
-	a = *pa;
-	l = salloc(smem(a, S) + smem(b, S));
-	p = l;
-	ch = 0;
-	while (*a!=S || *b!=S) {
-		if (*a==S || (*b!=S && *b<*a)) {
-			*p++ = *b++;
-			ch = 1;
-		}
-		else {
-			if (*a==*b)
-				b++;
-			*p++ = *a++;
-		}
-	}
-	*p = S;
-	if (ch) {
-		free(*pa);
-		*pa = l;
-	} else
-		free(l);
-	return ch;
+	memset(ts, 0, sizeof *ts);
 }
 
-Sym *
-first(Sym *stnc, Sym last)
+int
+tsunion(TSet *tsa, TSet *tsb)
 {
-	Sym f, *s;
+	int n;
+	unsigned *a, *b, c, t;
+
+	c = 0;
+	a = tsa->t;
+	b = tsb->t;
+	for (n=0; n<TSetSz; n++) {
+		t = *a;
+		*a |= *b;
+		c |= t ^ *a;
+	}
+	return !!c;
+}
+
+void
+first(TSet *ts, Sym *stnc, Sym last)
+{
+	Sym f;
 
 	f = stnc[0];
 	if (f == S) {
-		assert(last==S || last<ntk);
+		if (last==S)
+			return;
+		assert(last<ntk);
 		f = last;
 	}
 	if (f < ntk) {
-		s = salloc(1);
-		s[0] = f;
-		return s;
+		SetBit(ts->t, f);
+		return;
 	}
 	if (is[f].nul)
-		s = first(stnc+1, last);
-	else
-		s = salloc(0);
-	sunion(&s, is[f].fst);
-	return s;
+		first(ts, stnc+1, last);
+	tsunion(ts, &is[f].fst);
 }
 
-/* Note: this requires that i->nul is initially false
- * for all entries in the information table. i->fst
- * can be garbage for tokens.
- */
 void
 ginit()
 {
@@ -216,9 +211,8 @@ ginit()
 	Rule *r;
 	Info *i;
 	Sym *s;
+	TSet ts;
 
-	for (i=&is[MaxTk]; i-is<nsy; i++)
-		i->fst = salloc(0);
 	do {
 		chg = 0;
 		for (r=rs; r-rs<nrl; r++) {
@@ -229,9 +223,9 @@ ginit()
 			chg |= i->nul == 0;
 			i->nul = 1;
 		nonul:
-			s = first(r->rhs, S);
-			chg |= sunion(&i->fst, s);
-			free(s);
+			tszero(&ts);
+			first(&ts, r->rhs, S);
+			chg |= tsunion(&i->fst, &ts);
 		}
 	} while (chg);
 }
@@ -256,7 +250,7 @@ iadd(Item *i, Term *t1)
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		c = tcmp(t, t1);
 		if (c==0)
-			return sunion(&t->look, t1->look);
+			return tsunion(&t->lk, &t1->lk);
 		if (c>0)
 			break;
 	}
@@ -267,7 +261,6 @@ iadd(Item *i, Term *t1)
 	t = &i->ts[n];
 	memmove(t+1, t, (i->nt - (n+1)) * sizeof *t1);
 	*t = *t1;
-	t1->look = 0;
 	return 1;
 }
 
@@ -276,7 +269,7 @@ iclose(Item *i)
 {
 	Rule *r;
 	Term *t, t1;
-	Sym s, *rem, *l;
+	Sym s, *rem, l;
 	int chg, n;
 
 again:
@@ -288,21 +281,24 @@ again:
 		r = rfind(s);
 		if (!r)
 			die("some non-terminals are not defined");
-		l = t->look;
-		assert(*l!=S);
-		do {
+		l = -1;
+		for (;;) {
+			do {
+				if (++l>=ntk) {
+					r++;
+					l = 0;
+				}
+			} while (!GetBit(t->lk.t, l));
+			if (r-rs>=nrl || r->lhs != s)
+				break;
 			t1.rule = r;
 			t1.dot = 0;
-			t1.look = first(rem, *l);
+			tszero(&t1.lk);
+			first(&t1.lk, rem, l);
 			chg = iadd(i, &t1);
-			free(t1.look);
 			if (chg)
 				goto again;
-			if (*++l==S) {
-				l = t->look;
-				r++;
-			}
-		} while (r->lhs == s);
+		}
 	}
 }
 
@@ -319,8 +315,8 @@ igoto(Item *i, Sym s)
 			continue;
 		t1.rule = t->rule;
 		t1.dot = t->dot + 1;
-		t1.look = salloc(0);
-		sunion(&t1.look, t->look);
+		tszero(&t1.lk);
+		tsunion(&t1.lk, &t->lk);
 		iadd(&i1, &t1);
 	}
 	iclose(&i1);
@@ -362,10 +358,8 @@ stadd(Item **pi)
 		}
 	if (hi<nst && icmp(st[hi], i)==0) {
 		i1 = st[hi];
-		for (n=0; n<i->nt; n++) {
-			sunion(&i1->ts[n].look, i->ts[n].look);
-			free(i->ts[n].look);
-		}
+		for (n=0; n<i->nt; n++)
+			tsunion(&i1->ts[n].lk, &i->ts[n].lk);
 		free(i->ts);
 		free(i);
 		*pi = i1;
@@ -381,18 +375,21 @@ stadd(Item **pi)
 void
 stgen()
 {
-	Sym *eof, s;
+	Sym s;
 	Rule *r;
 	Item *start, *i, *i1;
+	Term tini;
 	int n;
 
 	ini = i = yalloc(1, sizeof *start);
 	*i = NulItem;
-	r = rfind(Start);
+	r = rfind(Sym0);
 	assert(r);
-	eof = salloc(1);
-	eof[0] = 0;
-	iadd(i, &(Term){ r, 0, eof });
+	tini.rule = r;
+	tini.dot = 0;
+	tszero(&tini.lk);
+	SetBit(tini.lk.t, 0);
+	iadd(i, &tini);
 	iclose(i);
 	stadd(&i);
 	for (;;) {
@@ -443,7 +440,7 @@ void
 tblset(int *tbl, Item *i, Term *t)
 {
 	int act;
-	Sym s, *l;
+	Sym s;
 
 	s = t->rule->rhs[t->dot];
 	if (s!=S) {
@@ -466,7 +463,9 @@ tblset(int *tbl, Item *i, Term *t)
 		}
 	} else
 		/* reduce */
-		for (l=t->look; (s=*l)!=S; l++) {
+		for (s=0; s<ntk; s++) {
+			if (!GetBit(t->lk.t, s))
+				continue;
 			/* default to shift if conflict occurs */
 			if (!tbl[s])
 				act = ALeft;
@@ -661,7 +660,7 @@ tblout()
 	fprintf(fout, "short yyntoks = %d;\n", ntk);
 	o = yalloc(nrl+nst+nsy, sizeof o[0]);
 	for (n=0; n<nrl; n++)
-		o[n] = smem(rs[n].rhs, S);
+		o[n] = slen(rs[n].rhs);
 	aout("yyr1", o, nrl);
 	for (n=0; n<nrl; n++)
 		o[n] = rs[n].lhs-MaxTk;
@@ -707,19 +706,20 @@ void
 stdump()
 {
 	Term *t;
-	Sym *s;
+	Sym s, *s1;
 	int n, m, d;
 	Rule *r;
 	Info *i;
 
 	if (!fgrm)
 		return;
-	for (i=&is[MaxTk]; i-is<nsy; i++) {
+	for (i=&is[Sym0]; i-is<nsy; i++) {
 		fprintf(fgrm, "Symbol %s\n", i->name);
 		fprintf(fgrm, "  Nullable: %s\n", i->nul ? "yes" : "no");
 		fprintf(fgrm, "  First:   ");
-		for (s=i->fst; *s!=S; s++)
-			fprintf(fgrm, " %s", is[*s].name);
+		for (s=0; s<ntk; s++)
+			if (GetBit(i->fst.t, s))
+				fprintf(fgrm, " %s", is[s].name);
 		fprintf(fgrm, "\n");
 	}
 	for (m=0; m<nst; m++) {
@@ -729,15 +729,16 @@ stdump()
 			r = t->rule;
 			d = t->dot;
 			n += fprintf(fgrm, "  %s ->", is[r->lhs].name);
-			for (s=r->rhs; *s!=S; s++, d--)
-				n += fprintf(fgrm, " %s%s", d ? "" : ". ", is[*s].name);
+			for (s1=r->rhs; *s1!=S; s1++, d--)
+				n += fprintf(fgrm, " %s%s", d ? "" : ". ", is[*s1].name);
 			if (!d)
 				n += fprintf(fgrm, " .");
 			while (n++<50)
 				fputc(' ', fgrm);
 			fprintf(fgrm, " [");
-			for (s=t->look; *s!=S; s++)
-				fprintf(fgrm, " %s", is[*s].name);
+			for (s=0; s<ntk; s++)
+				if (GetBit(t->lk.t, s))
+					fprintf(fgrm, " %s", is[s].name);
 			fprintf(fgrm, " ]\n");
 		}
 	}
@@ -928,7 +929,7 @@ getdecls()
 
 	strcpy(is[0].name, "$");
 	ntk = 1;
-	strcpy(is[Start].name, "@start");
+	strcpy(is[Sym0].name, "@start");
 	nsy = MaxTk+1;
 	sstart = S;
 	prec = 0;
@@ -1053,7 +1054,7 @@ getgram()
 			if (sstart==S)
 				die("syntax error, empty grammar");
 			r = &rs[nrl++];
-			r->lhs = Start;
+			r->lhs = Sym0;
 			r->rhs[0] = sstart;
 			r->rhs[1] = 0;
 			r->rhs[2] = S;
@@ -1110,7 +1111,7 @@ actout(Rule *r)
 	int i, ar;
 	char c, *p, *ty, tya[IdntSz];
 
-	ar = smem(r->rhs, S);
+	ar = slen(r->rhs);
 	p = r->act;
 	i = r->actln;
 	if (!p)
