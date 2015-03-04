@@ -620,7 +620,7 @@ actgen()
 		n = nst*(nsy-MaxTk + ntk);
 		fprintf(fgrm, "\nOptimizer report\n");
 		fprintf(fgrm, "  Tables size: %d\n", n);
-		fprintf(fgrm, "  Space savings: %.2g\n", (float)(n-actsz)/n);
+		fprintf(fgrm, "  Space savings: %.2g\n", (double)(n-actsz)/n);
 	}
 }
 
