@@ -143,16 +143,6 @@ rfind(Sym lhs)
 	return r;
 }
 
-Sym *
-salloc(int n)
-{
-	Sym *s;
-
-	s = yalloc(n+1, sizeof s[0]);
-	s[n] = S;
-	return s;
-}
-
 int
 slen(Sym *l)
 {
