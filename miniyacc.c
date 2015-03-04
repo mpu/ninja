@@ -177,10 +177,11 @@ tsunion(TSet *tsa, TSet *tsb)
 	c = 0;
 	a = tsa->t;
 	b = tsb->t;
-	for (n=0; n<TSetSz; n++, a++, b++) {
+	n = (31+ntk)/32;
+	while (n-- > 0) {
 		t = *a;
-		*a |= *b;
-		c |= t ^ *a;
+		*a |= *b++;
+		c |= t ^ *a++;
 	}
 	return !!c;
 }
@@ -315,10 +316,8 @@ igoto(Item *i, Sym s)
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
-		t1.rule = t->rule;
-		t1.dot = t->dot + 1;
-		tszero(&t1.lk);
-		tsunion(&t1.lk, &t->lk);
+		t1 = *t;
+		t1.dot++;
 		iadd(i1, &t1);
 	}
 	iclose(i1);
@@ -336,11 +335,11 @@ icmp(Item *a, Item *b)
 	return c;
 }
 
-void
+int
 stadd(Item **pi)
 {
 	Item *i, *i1;
-	int lo, hi, mid, n;
+	int lo, hi, mid, n, ch;
 
 	/* http://www.iq0.com/duffgram/bsearch.c */
 	i = *pi;
@@ -359,17 +358,20 @@ stadd(Item **pi)
 				hi = mid;
 		}
 	if (hi<nst && icmp(st[hi], i)==0) {
+		ch = 0;
 		i1 = st[hi];
 		for (n=0; n<i->nt; n++)
-			tsunion(&i1->ts[n].lk, &i->ts[n].lk);
+			ch |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
 		free(i);
 		*pi = i1;
+		return ch;
 	} else {
 		st = realloc(st, ++nst * sizeof st[0]);
 		if (!st)
 			die("out of memory");
 		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
 		st[hi] = i;
+		return 1;
 	}
 }
 
@@ -380,7 +382,7 @@ stgen()
 	Rule *r;
 	Item *start, *i, *i1;
 	Term tini;
-	int n;
+	int n, ch;
 
 	ini = i = yalloc(1, sizeof *start);
 	*i = itm0;
@@ -393,15 +395,12 @@ stgen()
 	iadd(i, &tini);
 	iclose(i);
 	stadd(&i);
-	for (;;) {
-		for (n=0;; n++) {
-			if (n>=nst)
-				return;
-			i = st[n];
-			if (!i->gtbl)
-				break;
-		}
-		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
+	ch = 1;
+	while (ch)
+	for (n=0, ch=0; n<nst; n++) {
+		i = st[n];
+		if (!i->gtbl)
+			i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
 		for (s=0; s<nsy; s++) {
 			i1 = igoto(i, s);
 			if (!i1->nt) {
@@ -409,7 +408,7 @@ stgen()
 				i->gtbl[s] = 0;
 				continue;
 			}
-			stadd(&i1);
+			ch |= stadd(&i1);
 			i->gtbl[s] = i1;
 		}
 	}
