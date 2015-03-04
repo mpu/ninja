@@ -25,7 +25,7 @@ enum {
 	MaxRhs = 32,
 	MaxTk = 500,
 	MaxNt = 500,
-	MaxRl = 500,
+	MaxRl = 800,
 	MaxTm = 1000,
 
 	TSetSz = (MaxTk+31)/32,
@@ -275,19 +275,13 @@ iclose(Item *i)
 			if (!r)
 				die("some non-terminals are not defined");
 			l = -1;
-			for (;;) {
-				do {
-					if (++l>=ntk) {
-						r++;
-						l = 0;
-					}
-				} while (!GetBit(t->lk.t, l));
-				if (r-rs>=nrl || r->lhs != s)
-					break;
+			tszero(&t1.lk);
+			for (l=0; l<ntk; l++)
+				if (GetBit(t->lk.t, l))
+					first(&t1.lk, rem, l);
+			for (; r-rs<nrl && r->lhs==s; r++) {
 				t1.rule = r;
 				t1.dot = 0;
-				tszero(&t1.lk);
-				first(&t1.lk, rem, l);
 				chg |= iadd(i, &t1);
 			}
 		}
