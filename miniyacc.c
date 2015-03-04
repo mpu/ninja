@@ -339,7 +339,7 @@ int
 stadd(Item **pi)
 {
 	Item *i, *i1;
-	int lo, hi, mid, n, ch;
+	int lo, hi, mid, n, chg;
 
 	/* http://www.iq0.com/duffgram/bsearch.c */
 	i = *pi;
@@ -358,13 +358,13 @@ stadd(Item **pi)
 				hi = mid;
 		}
 	if (hi<nst && icmp(st[hi], i)==0) {
-		ch = 0;
+		chg = 0;
 		i1 = st[hi];
 		for (n=0; n<i->nt; n++)
-			ch |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
+			chg |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
 		free(i);
 		*pi = i1;
-		return ch;
+		return chg;
 	} else {
 		st = realloc(st, ++nst * sizeof st[0]);
 		if (!st)
@@ -382,7 +382,7 @@ stgen()
 	Rule *r;
 	Item *start, *i, *i1;
 	Term tini;
-	int n, ch;
+	int n, chg;
 
 	ini = i = yalloc(1, sizeof *start);
 	*i = itm0;
@@ -395,9 +395,9 @@ stgen()
 	iadd(i, &tini);
 	iclose(i);
 	stadd(&i);
-	ch = 1;
-	while (ch)
-	for (n=0, ch=0; n<nst; n++) {
+	chg = 1;
+	while (chg)
+	for (n=0, chg=0; n<nst; n++) {
 		i = st[n];
 		if (!i->gtbl)
 			i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
@@ -408,7 +408,7 @@ stgen()
 				i->gtbl[s] = 0;
 				continue;
 			}
-			ch |= stadd(&i1);
+			chg |= stadd(&i1);
 			i->gtbl[s] = i1;
 		}
 	}
