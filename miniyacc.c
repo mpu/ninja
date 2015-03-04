@@ -297,7 +297,6 @@ iclose(Item *i)
 			t1.dot = 0;
 			tszero(&t1.lk);
 			first(&t1.lk, rem, l);
-			assert(t1.lk.t[0] || t1.lk.t[1] || t1.lk.t[2]);
 			chg |= iadd(i, &t1);
 		}
 	}
