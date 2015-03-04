@@ -177,16 +177,15 @@ tsunion(TSet *tsa, TSet *tsb)
 }
 
 void
-first(TSet *ts, Sym *stnc, Sym last)
+first(TSet *ts, Sym *stnc, TSet *last)
 {
 	Sym f;
 
 	f = stnc[0];
 	if (f == S) {
-		if (last==S)
-			return;
-		assert(last<ntk);
-		f = last;
+		if (last)
+			tsunion(ts, last);
+		return;
 	}
 	if (f < ntk) {
 		SetBit(ts->t, f);
@@ -217,7 +216,7 @@ ginit()
 			i->nul = 1;
 		nonul:
 			tszero(&ts);
-			first(&ts, r->rhs, S);
+			first(&ts, r->rhs, 0);
 			chg |= tsunion(&i->fst, &ts);
 		}
 	} while (chg);
@@ -237,7 +236,7 @@ tcmp(Term *a, Term *b)
 int
 tcmpv(const void *a, const void *b)
 {
-	return tcmp((Term *)a, (Term *) b);
+	return tcmp((Term *)a, (Term *)b);
 }
 
 int
@@ -261,12 +260,13 @@ iclose(Item *i)
 {
 	Rule *r;
 	Term *t, t1;
-	Sym s, *rem, l;
+	Sym s, *rem;
 	int chg, n;
 
 	do {
 		chg = 0;
-		for (n=0, t=i->ts; n<i->nt; n++, t++) {
+		for (n=0; n<i->nt; n++) {
+			t = &i->ts[n];
 			rem = &t->rule->rhs[t->dot];
 			s = *rem++;
 			if (s < ntk || s == S)
@@ -274,11 +274,8 @@ iclose(Item *i)
 			r = rfind(s);
 			if (!r)
 				die("some non-terminals are not defined");
-			l = -1;
 			tszero(&t1.lk);
-			for (l=0; l<ntk; l++)
-				if (GetBit(t->lk.t, l))
-					first(&t1.lk, rem, l);
+			first(&t1.lk, rem, &t->lk);
 			for (; r-rs<nrl && r->lhs==s; r++) {
 				t1.rule = r;
 				t1.dot = 0;
