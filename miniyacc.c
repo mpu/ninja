@@ -239,47 +239,52 @@ tcmpv(const void *a, const void *b)
 	return tcmp((Term *)a, (Term *)b);
 }
 
-int
-iadd(Item *i, Term *t1)
-{
-	Term *t;
-	int n;
-
-	for (n=0, t=i->ts; n<i->nt; n++, t++) {
-		if (tcmp(t, t1)==0)
-			return tsunion(&t->lk, &t1->lk);
-	}
-	if (i->nt>=MaxTm)
-		die("too many terms in item");
-	i->ts[i->nt++] = *t1;
-	return 1;
-}
-
 void
 iclose(Item *i)
 {
+	int smap[MaxNt];
 	Rule *r;
 	Term *t, t1;
 	Sym s, *rem;
-	int chg, n;
+	int chg, n, m;
 
+	t1.dot = 0;
+	memset(smap, 0, sizeof smap);
+	for (n=0; n<i->nt; n++) {
+		t = &i->ts[n];
+		s = t->rule->lhs-Sym0;
+		if (t->dot==0)
+		if (smap[s]==0)
+			smap[s] = n;
+	}
 	do {
 		chg = 0;
 		for (n=0; n<i->nt; n++) {
 			t = &i->ts[n];
 			rem = &t->rule->rhs[t->dot];
 			s = *rem++;
-			if (s < ntk || s == S)
+			if (s < Sym0 || s == S)
 				continue;
 			r = rfind(s);
 			if (!r)
 				die("some non-terminals are not defined");
 			tszero(&t1.lk);
 			first(&t1.lk, rem, &t->lk);
-			for (; r-rs<nrl && r->lhs==s; r++) {
-				t1.rule = r;
-				t1.dot = 0;
-				chg |= iadd(i, &t1);
+			m = smap[s-Sym0];
+			if (m)
+				for (; r-rs<nrl && r->lhs==s; r++, m++)
+					chg |= tsunion(&i->ts[m].lk, &t1.lk);
+			else {
+				m = i->nt;
+				smap[s-Sym0] = m;
+				for (; r-rs<nrl && r->lhs==s; r++, m++) {
+					if (m>=MaxTm)
+						die("too many terms in item");
+					t1.rule = r;
+					i->ts[m] = t1;
+				}
+				i->nt = m;
+				chg = 1;
 			}
 		}
 	} while (chg);
@@ -297,7 +302,7 @@ igoto(Item *i, Sym s)
 			continue;
 		t1 = *t;
 		t1.dot++;
-		iadd(&i0, &t1);
+		i0.ts[i0.nt++] = t1;
 	}
 	qsort(i0.ts, i0.nt, sizeof i0.ts[0], tcmpv);
 }
@@ -382,7 +387,8 @@ stgen()
 	tini.dot = 0;
 	tszero(&tini.lk);
 	SetBit(tini.lk.t, 0);
-	iadd(ini, &tini);
+	i0.nt = 0;
+	i0.ts[i0.nt++] = tini;
 	stadd(&ini);
 	do {
 		chg = 0;
