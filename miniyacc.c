@@ -355,8 +355,6 @@ stadd(Item **pi)
 		for (n=0; n<i->nt; n++)
 			chg |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
 		*pi = i1;
-		if (chg)
-			iclose(i1);
 		return chg;
 	} else {
 		st = realloc(st, ++nst * sizeof st[0]);
@@ -366,7 +364,6 @@ stadd(Item **pi)
 		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
 		st[hi] = yalloc(1, sizeof *i1);
 		*st[hi] = *i;
-		iclose(st[hi]);
 		return 1;
 	}
 }
@@ -394,6 +391,7 @@ stgen()
 		chg = 0;
 		for (n=0; n<nst; n++) {
 			i = st[n];
+			iclose(i);
 			for (s=0; s<nsy; s++) {
 				igoto(i, s);
 				i1 = &i0;
