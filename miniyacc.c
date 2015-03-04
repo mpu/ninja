@@ -16,7 +16,6 @@ typedef struct Item Item;
 typedef struct Row Row;
 
 #define S ((Sym) -1)
-#define NulItem (Item){0,0,0,0}
 #define Red(n) (- (n+2)) /* involutive, Red(Red(x)) == x */
 #define GetBit(s,n) (s[n/32] & (1<<(n%32)))
 #define SetBit(s,n) (s[n/32] |= 1<<(n%32))
@@ -26,7 +25,8 @@ enum {
 	MaxRhs = 32,
 	MaxTk = 500,
 	MaxNt = 500,
-	MaxRl = 1000,
+	MaxRl = 500,
+	MaxTm = 1000,
 
 	TSetSz = (MaxTk+31)/32,
 	Sym0 = MaxTk,
@@ -65,10 +65,10 @@ struct Term {
 };
 
 struct Item {
-	Term *ts;
-	int nt;
-	Item **gtbl;
 	int id;
+	int nt;
+	Term ts[MaxTm];
+	Item **gtbl;
 };
 
 struct Row {
@@ -79,6 +79,8 @@ struct Row {
 
 char srs[] = "shift/reduce conflict state %d token %s\n";
 char rrs[] = "reduce/reduce conflict state %d token %s\n";
+
+Item itm0;
 
 int nrl, nsy, nst, ntk;
 Rule rs[MaxRl]; /* grammar rules (ordered, rcmp) */
@@ -175,7 +177,7 @@ tsunion(TSet *tsa, TSet *tsb)
 	c = 0;
 	a = tsa->t;
 	b = tsb->t;
-	for (n=0; n<TSetSz; n++) {
+	for (n=0; n<TSetSz; n++, a++, b++) {
 		t = *a;
 		*a |= *b;
 		c |= t ^ *a;
@@ -242,25 +244,24 @@ tcmp(Term *a, Term *b)
 }
 
 int
+tcmpv(const void *a, const void *b)
+{
+	return tcmp((Term *)a, (Term *) b);
+}
+
+int
 iadd(Item *i, Term *t1)
 {
 	Term *t;
-	int n, c;
+	int n;
 
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
-		c = tcmp(t, t1);
-		if (c==0)
+		if (tcmp(t, t1)==0)
 			return tsunion(&t->lk, &t1->lk);
-		if (c>0)
-			break;
 	}
-	i->nt++;
-	i->ts = realloc(i->ts, i->nt * sizeof *t1);
-	if (!i->ts)
-		die("out of memory");
-	t = &i->ts[n];
-	memmove(t+1, t, (i->nt - (n+1)) * sizeof *t1);
-	*t = *t1;
+	if (i->nt>=MaxTm)
+		die("too many terms in item");
+	i->ts[i->nt++] = *t1;
 	return 1;
 }
 
@@ -272,8 +273,9 @@ iclose(Item *i)
 	Sym s, *rem, l;
 	int chg, n;
 
-again:
-	for (n=0, t=i->ts; n<i->nt; n++, t++) {
+	chg = 1;
+	while (chg)
+	for (n=0, t=i->ts, chg=0; n<i->nt; n++, t++) {
 		rem = &t->rule->rhs[t->dot];
 		s = *rem++;
 		if (s < ntk || s == S)
@@ -295,21 +297,22 @@ again:
 			t1.dot = 0;
 			tszero(&t1.lk);
 			first(&t1.lk, rem, l);
-			chg = iadd(i, &t1);
-			if (chg)
-				goto again;
+			assert(t1.lk.t[0] || t1.lk.t[1] || t1.lk.t[2]);
+			chg |= iadd(i, &t1);
 		}
 	}
+	qsort(i->ts, i->nt, sizeof i->ts[0], tcmpv);
 }
 
-Item
+Item *
 igoto(Item *i, Sym s)
 {
 	Term *t, t1;
-	Item i1;
+	Item *i1;
 	int n;
 
-	i1 = NulItem;
+	i1 = yalloc(1, sizeof *i1);
+	*i1 = itm0;
 	for (n=0, t=i->ts; n<i->nt; n++, t++) {
 		if (t->rule->rhs[t->dot] != s)
 			continue;
@@ -317,9 +320,9 @@ igoto(Item *i, Sym s)
 		t1.dot = t->dot + 1;
 		tszero(&t1.lk);
 		tsunion(&t1.lk, &t->lk);
-		iadd(&i1, &t1);
+		iadd(i1, &t1);
 	}
-	iclose(&i1);
+	iclose(i1);
 	return i1;
 }
 
@@ -360,7 +363,6 @@ stadd(Item **pi)
 		i1 = st[hi];
 		for (n=0; n<i->nt; n++)
 			tsunion(&i1->ts[n].lk, &i->ts[n].lk);
-		free(i->ts);
 		free(i);
 		*pi = i1;
 	} else {
@@ -382,7 +384,7 @@ stgen()
 	int n;
 
 	ini = i = yalloc(1, sizeof *start);
-	*i = NulItem;
+	*i = itm0;
 	r = rfind(Sym0);
 	assert(r);
 	tini.rule = r;
@@ -402,8 +404,7 @@ stgen()
 		}
 		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
 		for (s=0; s<nsy; s++) {
-			i1 = yalloc(1, sizeof *i1);
-			*i1 = igoto(i, s);
+			i1 = igoto(i, s);
 			if (!i1->nt) {
 				free(i1);
 				i->gtbl[s] = 0;
