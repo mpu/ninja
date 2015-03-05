@@ -365,8 +365,9 @@ stadd(Item **pi)
 		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
 		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
 		i->dirty = 1;
-		st[hi] = yalloc(1, sizeof *i1);
-		*st[hi] = *i;
+		i1 = yalloc(1, sizeof *i1);
+		*i1 = *i;
+		*pi = st[hi] = i1;
 		return 1;
 	}
 }
