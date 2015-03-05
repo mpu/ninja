@@ -69,6 +69,7 @@ struct Item {
 	int nt;
 	Term ts[MaxTm];
 	Item **gtbl;
+	int dirty;
 };
 
 struct Row {
@@ -354,6 +355,7 @@ stadd(Item **pi)
 		i1 = st[hi];
 		for (n=0; n<i->nt; n++)
 			chg |= tsunion(&i1->ts[n].lk, &i->ts[n].lk);
+		i1->dirty |= chg;
 		*pi = i1;
 		return chg;
 	} else {
@@ -362,6 +364,7 @@ stadd(Item **pi)
 			die("out of memory");
 		memmove(&st[hi+1], &st[hi], (nst-1 - hi) * sizeof st[0]);
 		i->gtbl = yalloc(nsy, sizeof i->gtbl[0]);
+		i->dirty = 1;
 		st[hi] = yalloc(1, sizeof *i1);
 		*st[hi] = *i;
 		return 1;
@@ -387,10 +390,14 @@ stgen()
 	i0.nt = 0;
 	i0.ts[i0.nt++] = tini;
 	stadd(&ini);
+	ini->dirty = 1;
 	do {
 		chg = 0;
 		for (n=0; n<nst; n++) {
 			i = st[n];
+			if (!i->dirty)
+				continue;
+			i->dirty = 0;
 			iclose(i);
 			for (s=0; s<nsy; s++) {
 				igoto(i, s);
