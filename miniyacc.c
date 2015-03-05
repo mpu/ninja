@@ -382,7 +382,6 @@ stgen()
 
 	ini = &i0;
 	r = rfind(Sym0);
-	assert(r);
 	tini.rule = r;
 	tini.dot = 0;
 	tszero(&tini.lk);
@@ -390,7 +389,6 @@ stgen()
 	i0.nt = 0;
 	i0.ts[i0.nt++] = tini;
 	stadd(&ini);
-	ini->dirty = 1;
 	do {
 		chg = 0;
 		for (n=0; n<nst; n++) {
