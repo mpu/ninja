@@ -640,11 +640,10 @@ aout(char *name, int *t, int n)
 		if (i % 10 == 0)
 			fprintf(fout, "\n");
 		fprintf(fout, "%4d", t[i]);
-		if (i == n-1)
-			fprintf(fout, "\n};\n");
-		else
+		if (i != n-1)
 			fprintf(fout, ",");
 	}
+	fprintf(fout, "\n};\n");
 }
 
 void
