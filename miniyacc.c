@@ -1,5 +1,6 @@
 /*% clang -g -std=c99 -Wall -Wextra % -o #
- * miniyacc - port of ninja.ml, LALR(1) grammars.
+ * miniyacc - LALR(1) grammars for C
+ * See LICENSE for copyright and license details.
  */
 #include <assert.h>
 #include <ctype.h>
