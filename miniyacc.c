@@ -1239,14 +1239,16 @@ init(int ac, char *av[])
 	if (!(srca = *av))
 		goto usage;
 	fin = fopen(srca, "r");
-	snprintf(buf, 100, "%s.tab.c", pref);
+	if (strlen(pref) + 10 > sizeof buf)
+		die("-b prefix too long");
+	sprintf(buf, "%s.tab.c", pref);
 	fout = fopen(buf, "w");
 	if (vf) {
-		snprintf(buf, 100, "%s.output", pref);
+		sprintf(buf, "%s.output", pref);
 		fgrm = fopen(buf, "w");
 	}
 	if (df) {
-		snprintf(buf, 100, "%s.tab.h", pref);
+		sprintf(buf, "%s.tab.h", pref);
 		fhdr = fopen(buf, "w");
 		if (fhdr) {
 			fprintf(fhdr, "#ifndef Y_TAB_H_\n");
