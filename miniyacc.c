@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef int Sym;
 typedef struct Rule Rule;
@@ -102,10 +103,11 @@ int *adsp;
 int *gdsp;
 
 int lineno = 1;
-char *fins;
+char *srca;
 FILE *fin;
 FILE *fout;
 FILE *fgrm;
+FILE *fhdr;
 
 void
 die(char *s)
@@ -624,12 +626,6 @@ actgen()
 			}
 	}
 	free(o);
-	if (fgrm) {
-		n = nst*(nsy-MaxTk + ntk);
-		fprintf(fgrm, "\nOptimizer report\n");
-		fprintf(fgrm, "  Tables size: %d\n", n);
-		fprintf(fgrm, "  Space savings: %.2g\n", (double)(n-actsz)/n);
-	}
 }
 
 void
@@ -675,10 +671,8 @@ tblout()
 	aout("yyadsp", adsp, nst);
 	aout("yygdsp", gdsp, nsy-MaxTk);
 	for (n=0; n<actsz; n++)
-		if (act[n]>=0) {
-			/* assert(act[n]!=0); I think, this is wrong. */
+		if (act[n]>=0)
 			act[n]--;
-		}
 	aout("yyact", act, actsz);
 	aout("yychk", chk, actsz);
 	for (n=0; n<128; n++) {
@@ -693,9 +687,16 @@ tblout()
 		if (is[n].name[0]=='\'')
 			continue;
 		fprintf(fout, "#define %s %d\n", is[n].name, m);
+		if (fhdr)
+			fprintf(fhdr, "#define %s %d\n", is[n].name, m);
 		o[m++] = n;
 	}
 	aout("yytrns", o, m);
+	if (fhdr) {
+		fprintf(fhdr, "int yyparse(void);\n");
+		fprintf(fhdr, "extern YYSTYPE yylval;\n");
+		fprintf(fhdr, "#endif\n");
+	}
 	free(o);
 }
 
@@ -703,43 +704,49 @@ void
 stdump()
 {
 	Term *t;
-	Sym s, *s1;
-	int n, m, d;
+	Sym *s1;
+	int n, m, d, act;
 	Rule *r;
-	Info *i;
+	Row *ar;
 
 	if (!fgrm)
 		return;
-	for (i=&is[Sym0]; i-is<nsy; i++) {
-		fprintf(fgrm, "Symbol %s\n", i->name);
-		fprintf(fgrm, "  Nullable: %s\n", i->nul ? "yes" : "no");
-		fprintf(fgrm, "  First:   ");
-		for (s=0; s<ntk; s++)
-			if (GetBit(i->fst.t, s))
-				fprintf(fgrm, " %s", is[s].name);
-		fprintf(fgrm, "\n");
+	for (r=rs; r-rs<nrl; r++) {
+		fprintf(fgrm, "\n%03d: %s ->", (int)(r-rs), is[r->lhs].name);
+		for (s1=r->rhs; *s1!=S; s1++)
+			fprintf(fgrm, " %s", is[*s1].name);
 	}
+	fprintf(fgrm, "\n");
 	for (m=0; m<nst; m++) {
 		fprintf(fgrm, "\nState %d:\n", m);
 		for (t=st[m]->ts; t-st[m]->ts<st[m]->nt; t++) {
-			n = 0;
 			r = t->rule;
 			d = t->dot;
-			n += fprintf(fgrm, "  %s ->", is[r->lhs].name);
+			if (d==0 && t!=st[m]->ts)
+				continue;
+			fprintf(fgrm, "  %s ->", is[r->lhs].name);
 			for (s1=r->rhs; *s1!=S; s1++, d--)
-				n += fprintf(fgrm, " %s%s", d ? "" : ". ", is[*s1].name);
+				fprintf(fgrm, " %s%s", d ? "" : ". ", is[*s1].name);
 			if (!d)
-				n += fprintf(fgrm, " .");
-			while (n++<50)
-				fputc(' ', fgrm);
-			fprintf(fgrm, " [");
-			for (s=0; s<ntk; s++)
-				if (GetBit(t->lk.t, s))
-					fprintf(fgrm, " %s", is[s].name);
-			fprintf(fgrm, " ]\n");
+				fprintf(fgrm, " .");
+			fprintf(fgrm, "\n");
 		}
+		fprintf(fgrm, "\n");
+		ar = &as[m];
+		for (n=0; n<ntk; n++) {
+			act = ar->t[n];
+			if (!act)
+				continue;
+			if (act==-1)
+				fprintf(fgrm, "  %s error (nonassoc)\n", is[n].name);
+			else if (act<0)
+				fprintf(fgrm, "  %s reduce with rule %d\n", is[n].name, Red(act));
+			else
+				fprintf(fgrm, "  %s shift and go to %d\n", is[n].name, act-1);
+		}
+		if (ar->def != -1)
+			fprintf(fgrm, "  * reduce with rule %d\n", ar->def);
 	}
-	fprintf(fgrm, "\n");
 }
 
 enum {
@@ -946,9 +953,14 @@ getdecls()
 		tk = nexttk();
 		if (tk!=TLBrack)
 			die("syntax error, { expected after %union");
-		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+		fprintf(fout, "#line %d \"%s\"\n", lineno, srca);
 		s = cpycode();
-		fprintf(fout, "typedef union %s YYSTYPE;\n", s);
+		fprintf(fout, "union yyunion %s;\n", s);
+		fprintf(fout, "#define YYSTYPE yyunion\n");
+		if (fhdr) {
+			fprintf(fhdr, "union yyunion %s;\n", s);
+			fprintf(fhdr, "#define YYSTYPE yyunion\n");
+		}
 		free(s);
 		doty = 1;
 		tk = nexttk();
@@ -1007,7 +1019,7 @@ getdecls()
 		}
 		break;
 	case TLL:
-		fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+		fprintf(fout, "#line %d \"%s\"\n", lineno, srca);
 		for (;;) {
 			c = fgetc(fin);
 			if (c == EOF)
@@ -1027,8 +1039,6 @@ getdecls()
 		tk = nexttk();
 		break;
 	case TPP:
-		if (!doty)
-			fprintf(fout, "typedef int YYSTYPE;\n");
 		return;
 	case TEof:
 		die("syntax error, unfinished declarations");
@@ -1190,13 +1200,13 @@ codeout()
 	for (n=0; n<nrl; n++) {
 		fprintf(fout, "\tcase %d:\n", n);
 		r = &rs[n];
-		fprintf(fout, "#line %d \"%s\"\n", r->actln, fins);
+		fprintf(fout, "#line %d \"%s\"\n", r->actln, srca);
 		actout(r);
 		fputs("\t\tbreak;\n", fout);
 	}
 	for (p=code1; *p; p++)
 		fputs(*p, fout);
-	fprintf(fout, "#line %d \"%s\"\n", lineno, fins);
+	fprintf(fout, "#line %d \"%s\"\n", lineno, srca);
 	while ((c=fgetc(fin))!=EOF)
 		fputc(c, fout);
 }
@@ -1204,34 +1214,47 @@ codeout()
 void
 init(int ac, char *av[])
 {
-	int vflag;
-	char buf[100];
-	char *f, *p;
+	int c, vf, df;
+	char *pref, buf[100];
 
-	if (ac<2)
-		die("no input file");
-	vflag = 0;
-	f = av[1];
-	if (strcmp(f, "-v")==0) {
-		if (ac<3)
-			die("no input file");
-		f = av[2];
-		vflag = 1;
-	}
-	fins = f;
-	fin = fopen(f, "r");
-	p = strrchr(f, '.');
-	if (p)
-		*p = 0;
-	snprintf(buf, sizeof buf, "%s.tab.c", f);
+	(void) ac;
+	pref = "y";
+	vf = df = 0;
+	for (av++; av[0] && av[0][0]=='-' && (c=av[0][1]); av++)
+		switch (c) {
+		case 'v':
+			vf = 1;
+			break;
+		case 'd':
+			df = 1;
+			break;
+		case 'b':
+			if ((pref = *++av))
+				break;
+		default:
+		usage:
+			fputs("usage: myacc [-vd] [-b file_prefix] grammar\n", stderr);
+			exit(1);
+		}
+	if (!(srca = *av))
+		goto usage;
+	fin = fopen(srca, "r");
+	snprintf(buf, 100, "%s.tab.c", pref);
 	fout = fopen(buf, "w");
-	snprintf(buf, sizeof buf, "%s.grm", f);
-	if (vflag)
+	if (vf) {
+		snprintf(buf, 100, "%s.output", pref);
 		fgrm = fopen(buf, "w");
-	if (!fin || !fout)
+	}
+	if (df) {
+		snprintf(buf, 100, "%s.tab.h", pref);
+		fhdr = fopen(buf, "w");
+		if (fhdr) {
+			fprintf(fhdr, "#ifndef Y_TAB_H_\n");
+			fprintf(fhdr, "#define Y_TAB_H_\n");
+		}
+	}
+	if (!fin || !fout || (!fgrm && vf) || (!fhdr && df))
 		die("cannot open work files");
-	if (p)
-		*p = '.';
 }
 
 int
@@ -1243,8 +1266,8 @@ main(int ac, char *av[])
 	getgram();
 	ginit();
 	stgen();
-	stdump();
 	tblgen();
+	stdump();
 	actgen();
 	tblout();
 	codeout();
@@ -1265,6 +1288,9 @@ char *retcode = "\t\tyyval = ps[1].val; return 0;";
 
 char *code0[] = {
 "\n",
+"#ifndef YYSTYPE\n",
+"#define YYSTYPE int\n",
+"#endif\n",
 "YYSTYPE yylval;\n",
 "\n",
 "int\n",
